@@ -1,101 +1,118 @@
 import streamlit as st
-from fpdf import FPDF
-import urllib.parse
+from datetime import datetime
 
-# Configurações iniciais da página
-st.set_page_config(page_title="Zelador Virtual", page_icon="🏢")
+# Configurações de página
+st.set_page_config(page_title="Zelador Virtual ICS", layout="centered")
 
 # --- DADOS DE CONFIGURAÇÃO ---
-AREAS = {
+AREAS_INFO = {
     "Sede Social": {
-        "sublocais": ["Terraço", "1º Andar", "2º Andar"],
+        "senha": "SSICS",
+        "subdivisoes": ["Terraço", "1º Andar", "2º Andar"],
         "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
     },
     "Operacional": {
-        "sublocais": [
+        "senha": "OICS",
+        "subdivisoes": [
             "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
-            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", 
-            "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
+            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
+            "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
         ],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     }
 }
 
-# --- TÍTULO ---
-st.title("🏢 Zelador Virtual")
-st.markdown("Sistema de inspeção e checklist predial.")
+# --- ESTADO DO APLICATIVO ---
+if 'relatorio' not in st.session_state:
+    st.session_state.relatorio = []
+if 'autenticado' not in st.session_state:
+    st.session_state.autenticado = False
 
-# --- SELEÇÃO DE ÁREA ---
-area_selecionada = st.selectbox("Selecione a Área:", list(AREAS.keys()))
-sublocal_selecionado = st.selectbox("Selecione o Local Específico:", AREAS[area_selecionada]["sublocais"])
+# --- INTERFACE ---
+st.title("🏛️ Zelador Virtual")
+st.subheader("Checklist de Inspeção")
 
-# Identificação do Usuário
-usuario = st.text_input("Identificação do Inspetor (Nome):")
+# 1. Identificação e Seleção de Área
+col1, col2 = st.columns(2)
+with col1:
+    nome_usuario = st.text_input("Nome do Inspetor:")
+with col2:
+    area_selecionada = st.selectbox("Selecione a Área:", ["Selecione...", "Sede Social", "Operacional"])
 
-st.divider()
-
-# --- FORMULÁRIO DE INSPEÇÃO ---
-inspecoes = {}
-nao_conformidades = []
-
-if usuario:
-    st.subheader(f"Inspecionando: {sublocal_selecionado}")
+if area_selecionada != "Selecione...":
+    senha_input = st.text_input("Digite a senha da área:", type="password")
     
-    for item in AREAS[area_selecionada]["itens"]:
-        st.write(f"**{item}**")
-        col1, col2 = st.columns([1, 2])
+    if senha_input == AREAS_INFO[area_selecionada]["senha"]:
+        st.success(f"Acesso liberado para {area_selecionada}")
         
-        status = col1.radio(f"Status {item}", ["Conforme", "Não Conforme"], key=f"rad_{item}", label_visibility="collapsed")
+        # 2. Subdivisão
+        subdivisao = st.selectbox("Selecione o local específico:", AREAS_INFO[area_selecionada]["subdivisoes"])
         
-        if status == "Não Conforme":
-            acao = col2.selectbox("Ação necessária:", ["Limpeza Imediata", "Reparo", "Troca de Componentes"], key=f"sel_{item}")
-            obs = col2.text_input(f"Observação (opcional):", key=f"txt_{item}")
+        st.divider()
+        st.write(f"### Inspecionando: {subdivisao}")
+        
+        # Form de Inspeção
+        resultados = {}
+        for item in AREAS_INFO[area_selecionada]["itens"]:
+            st.write(f"**{item}**")
+            status = st.radio(f"Status de {item}", ["Conforme", "Não Conforme"], key=f"radio_{item}", horizontal=True)
             
-            nao_conformidades.append({
-                "Item": item,
-                "Ação": acao,
-                "Observação": obs if obs else "Nenhuma"
-            })
-    
-    st.divider()
-
-    # --- FINALIZAÇÃO E RELATÓRIO ---
-    if st.button("Finalizar Relatório"):
-        if not nao_conformidades:
-            st.success("Tudo em conformidade! Nenhum relatório de falhas gerado.")
-        else:
-            st.subheader("📋 Resumo de Não Conformidades")
-            
-            # Montar texto do relatório
-            texto_relatorio = f"RELATÓRIO DE ZELADORIA\nLocal: {area_selecionada} - {sublocal_selecionado}\nInspetor: {usuario}\n\n"
-            for nc in nao_conformidades:
-                st.warning(f"**{nc['Item']}**: {nc['Ação']} ({nc['Observação']})")
-                texto_relatorio += f"- {nc['Item']}: {nc['Ação']} | Obs: {nc['Observação']}\n"
-
-            # --- BOTÕES DE EXPORTAÇÃO ---
+            if status == "Não Conforme":
+                acao = st.selectbox(f"Ação necessária para {item}", ["Limpeza Imediata", "Reparo", "Troca de componentes"], key=f"acao_{item}")
+                obs = st.text_input(f"Observação (opcional)", key=f"obs_{item}")
+                resultados[item] = {"status": status, "acao": acao, "obs": obs}
+            else:
+                resultados[item] = {"status": status}
             st.divider()
-            
-            # 1. Gerar PDF
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            pdf.cell(200, 10, txt="Relatorio de Nao Conformidades", ln=True, align='C')
-            pdf.ln(10)
-            for linha in texto_relatorio.split('\n'):
-                pdf.cell(200, 10, txt=linha, ln=True)
-            
-            pdf_output = pdf.output(dest='S').encode('latin-1')
-            st.download_button("📥 Baixar Relatório em PDF", data=pdf_output, file_name="relatorio_zeladoria.pdf", mime="application/pdf")
 
-            # 2. WhatsApp
-            texto_zap = urllib.parse.quote(texto_relatorio)
-            link_zap = f"https://wa.me/?text={texto_zap}"
-            st.link_button("📲 Enviar via WhatsApp", link_zap)
+        # 3. Finalização
+        if st.button("Finalizar Checklist"):
+            nao_conformidades = []
+            for item, dados in resultados.items():
+                if dados["status"] == "Não Conforme":
+                    nao_conformidades.append(f"- {item}: {dados['acao']} ({dados.get('obs', 'Sem obs')})")
             
-            # 3. Email
-            corpo_email = urllib.parse.quote(texto_relatorio)
-            link_email = f"mailto:?subject=Relatorio%20Zeladoria%20{sublocal_selecionado}&body={corpo_email}"
-            st.link_button("📧 Enviar via E-mail", link_email)
+            if not nome_usuario:
+                st.error("Por favor, identifique-se antes de finalizar.")
+            else:
+                st.session_state.relatorio_final = {
+                    "inspetor": nome_usuario,
+                    "area": area_selecionada,
+                    "local": subdivisao,
+                    "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    "falhas": nao_conformidades
+                }
+                st.session_state.finalizado = True
 
-else:
-    st.info("Por favor, insira sua identificação para começar.")
+# --- RELATÓRIO E EXPORTAÇÃO ---
+if 'finalizado' in st.session_state:
+    rel = st.session_state.relatorio_final
+    st.success("✅ Checklist Finalizado!")
+    
+    conteudo_relatorio = f"RELATÓRIO DE NÃO CONFORMIDADE\n" \
+                         f"Data: {rel['data']}\n" \
+                         f"Inspetor: {rel['inspetor']}\n" \
+                         f"Local: {rel['area']} - {rel['local']}\n\n" \
+                         f"FALHAS ENCONTRADAS:\n" + "\n".join(rel['falhas'])
+
+    st.text_area("Resumo do Relatório", conteudo_relatorio, height=200)
+
+    # Opções de Envio (Simulação e Links)
+    col_a, col_b, col_c = st.columns(3)
+    
+    with col_a:
+        # Link para WhatsApp
+        msg_wp = f"https://wa.me/?text={conteudo_relatorio.replace(' ', '%20').replace('\n', '%0A')}"
+        st.link_button("📲 WhatsApp", msg_wp)
+        
+    with col_b:
+        # Link para Email
+        mailto = f"mailto:?subject=Relatorio_{rel['local']}&body={conteudo_relatorio.replace(' ', '%20').replace('\n', '%0A')}"
+        st.link_button("📧 E-mail", mailto)
+        
+    with col_c:
+        st.info("Para PDF: Use 'Imprimir' (Ctrl+P) e salvar como PDF.")
+
+    if st.button("Novo Checklist"):
+        del st.session_state.finalizado
+        st.rerun()
