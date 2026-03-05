@@ -1,118 +1,112 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from io import BytesIO
 
-# Configuração da página
-st.set_page_config(page_title="Zelador Virtual", page_icon="🏢")
+# Configurações iniciais da página
+st.set_page_config(page_title="Zelador Virtual ICS", layout="centered")
 
-# --- BANCO DE DADOS TEMPORÁRIO (Simulado) ---
+# --- BANCO DE DADOS SIMULADO (Histórico) ---
 if 'historico' not in st.session_state:
     st.session_state['historico'] = []
 
-# --- CONFIGURAÇÕES DE DADOS ---
+# --- DICIONÁRIO DE DADOS ---
 AREAS = {
     "Sede Social": {
-        "sub": ["Terraço", "1º Andar", "2º Andar"],
-        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"],
-        "senha": "SSICS"
+        "senha": "SSICS",
+        "subdivisoes": ["Terraço", "1º Andar", "2º Andar"],
+        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
     },
     "Operacional": {
-        "sub": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
-                "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
-                "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
-        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
-        "senha": "OPICS"
+        "senha": "OPICS",
+        "subdivisoes": [
+            "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
+            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
+            "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
+        ],
+        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     }
 }
 
 # --- INTERFACE ---
-st.title("🏢 Zelador Virtual")
-tab1, tab2 = st.tabs(["Nova Inspeção", "Histórico"])
+st.title("🏗️ Zelador Virtual - Checklist de Inspeção")
 
-with tab1:
-    # 1. Identificação e Área
-    col1, col2 = st.columns(2)
-    with col1:
-        nome_usuario = st.text_input("Seu Nome/Identificação:")
-    with col2:
-        area_sel = st.selectbox("Selecione a Área:", [""] + list(AREAS.keys()))
+aba1, aba2, aba3 = st.tabs(["Inspeção", "Histórico", "Cronograma"])
 
-    if area_sel:
-        # 2. Validação de Senha
-        senha_input = st.text_input(f"Digite a senha para {area_sel}:", type="password")
+with aba1:
+    # 1. Identificação
+    area_selecionada = st.selectbox("Selecione a Área", list(AREAS.keys()))
+    usuario = st.text_input("Nome do Inspetor")
+    senha = st.text_input("Senha da Área", type="password")
+
+    if senha == AREAS[area_selecionada]["senha"]:
+        st.success(f"Acesso liberado para {area_selecionada}")
         
-        if senha_input == AREAS[area_sel]["senha"]:
-            st.success("Acesso Liberado")
-            sub_area = st.selectbox(f"Selecione o local de {area_sel}:", AREAS[area_sel]["sub"])
+        subdivisao = st.selectbox("Subdivisão", AREAS[area_selecionada]["subdivisoes"])
+        
+        st.divider()
+        st.subheader(f"Checklist: {subdivisao}")
+        
+        respostas = {}
+        
+        for item in AREAS[area_selecionada]["itens"]:
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                status = st.radio(f"{item}:", ["Conforme", "Não Conforme"], key=item)
             
-            st.divider()
-            st.subheader(f"Checklist: {sub_area}")
+            detalhes = None
+            obs = ""
             
-            # 3. Formulário de Inspeção
-            respostas = {}
-            for item in AREAS[area_sel]["itens"]:
-                st.write(f"**Item: {item}**")
-                status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"rad_{item}", horizontal=True)
-                
-                detalhes = {"status": status, "acao": "", "obs": ""}
-                
-                if status == "Não Conforme":
-                    detalhes["acao"] = st.selectbox("Ação necessária:", 
-                                                   ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"],
-                                                   key=f"sel_{item}")
-                    detalhes["obs"] = st.text_input("Observação (Opcional):", key=f"txt_{item}")
-                
-                respostas[item] = detalhes
-                st.divider()
+            if status == "Não Conforme":
+                with col2:
+                    detalhes = st.selectbox(f"Ação para {item}", 
+                                         ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"],
+                                         key=f"det_{item}")
+                    obs = st.text_input(f"Obs. adicional ({item})", key=f"obs_{item}")
+            
+            respostas[item] = {"status": status, "acao": detalhes, "obs": obs}
 
-            # 4. Finalização
-            if st.button("Finalizar Inspeção"):
-                nao_conformidades = [
-                    {"Item": k, "Ação": v["acao"], "Obs": v["obs"]} 
-                    for k, v in respostas.items() if v["status"] == "Não Conforme"
-                ]
-                
-                registro = {
-                    "Data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    "Usuário": nome_usuario,
-                    "Área": area_sel,
-                    "Sub-área": sub_area,
-                    "Problemas": nao_conformidades
-                }
-                
-                st.session_state['historico'].append(registro)
-                st.balloons()
-                st.success("Inspeção salva com sucesso!")
+        if st.button("Finalizar Inspeção"):
+            # Filtrar apenas Não Conformidades
+            nao_conformes = {k: v for k, v in respostas.items() if v["status"] == "Não Conforme"}
+            
+            relatorio_texto = f"RELATÓRIO DE NÃO CONFORMIDADE - {area_selecionada}\n"
+            relatorio_texto += f"Local: {subdivisao} | Inspetor: {usuario}\n"
+            relatorio_texto += f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            
+            for item, dados in nao_conformes.items():
+                relatorio_texto += f"- {item}: {dados['acao']} ({dados['obs']})\n"
 
-                # Exibição do Relatório de Não Conformidades
-                if nao_conformidades:
-                    st.warning("### Relatório de Não Conformidades")
-                    df_nc = pd.DataFrame(nao_conformidades)
-                    st.table(df_nc)
-                    
-                    # Simulação de botões de exportação
-                    st.write("---")
-                    st.write("**Exportar Relatório:**")
-                    c1, c2, c3 = st.columns(3)
-                    c1.button("📩 Enviar por E-mail")
-                    c2.button("💬 Enviar WhatsApp")
-                    c3.button("📄 Gerar PDF (Download)")
-                else:
-                    st.info("Tudo em conformidade! Nenhum reparo necessário.")
+            # Salvar no histórico
+            st.session_state['historico'].append({
+                "Data": datetime.now().strftime('%d/%m/%Y'),
+                "Área": area_selecionada,
+                "Local": subdivisao,
+                "Problemas": len(nao_conformes)
+            })
 
-        elif senha_input != "":
-            st.error("Senha incorreta.")
+            st.subheader("Relatório Gerado")
+            st.text_area("Cópia do Relatório:", relatorio_texto, height=200)
+            
+            # Botões de ação (Simulados para Web)
+            st.info("Para enviar via WhatsApp ou E-mail, copie o texto acima.")
+            st.download_button("Baixar Relatório (PDF/TXT)", relatorio_texto, file_name="relatorio.txt")
+            
+    elif senha != "":
+        st.error("Senha incorreta para esta área.")
 
-with tab2:
-    st.header("📋 Histórico de Inspeções")
+with aba2:
+    st.subheader("Histórico de Inspeções")
     if st.session_state['historico']:
-        for i, insp in enumerate(reversed(st.session_state['historico'])):
-            with st.expander(f"{insp['Data']} - {insp['Área']} ({insp['Sub-área']})"):
-                st.write(f"**Inspetor:** {insp['Usuário']}")
-                if insp['Problemas']:
-                    st.table(pd.DataFrame(insp['Problemas']))
-                else:
-                    st.write("Sem não conformidades.")
+        df = pd.DataFrame(st.session_state['historico'])
+        st.table(df)
     else:
         st.write("Nenhuma inspeção realizada ainda.")
+
+with aba3:
+    st.subheader("Cronograma Sugerido")
+    cronograma = {
+        "Área": ["Sede Social", "Hangaragem", "Cais e Bacias", "Áreas Comuns"],
+        "Frequência": ["Diária", "Semanal", "Quinzenal", "Mensal"],
+        "Critério": ["Fluxo de sócios", "Segurança técnica", "Exposição marítima", "Estética"]
+    }
+    st.table(pd.DataFrame(cronograma))
