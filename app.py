@@ -1,118 +1,102 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from io import BytesIO
 
 # Configuração da página
-st.set_page_config(page_title="Zelador Virtual", page_icon="🏢")
+st.set_page_config(page_title="Zelador Virtual ICS", layout="centered")
 
-# --- BANCO DE DADOS TEMPORÁRIO (Simulado) ---
+# --- BANCO DE DADOS FICTÍCIO (EM MEMÓRIA) ---
 if 'historico' not in st.session_state:
-    st.session_state['historico'] = []
+    st.session_state.historico = []
 
-# --- CONFIGURAÇÕES DE DADOS ---
-AREAS = {
+# --- DICIONÁRIOS DE CONFIGURAÇÃO ---
+AREAS_CONFIG = {
     "Sede Social": {
-        "sub": ["Terraço", "1º Andar", "2º Andar"],
-        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"],
-        "senha": "SSICS"
+        "senha": "SSICS",
+        "subdivisoes": ["Terraço", "1º Andar", "2º Andar"],
+        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
     },
     "Operacional": {
-        "sub": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
-                "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
-                "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
-        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
-        "senha": "OPICS"
+        "senha": "OPICS",
+        "subdivisoes": [
+            "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
+            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
+            "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
+        ],
+        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     }
 }
 
 # --- INTERFACE ---
-st.title("🏢 Zelador Virtual")
-tab1, tab2 = st.tabs(["Nova Inspeção", "Histórico"])
+st.title("🏛️ Zelador Virtual")
 
-with tab1:
-    # 1. Identificação e Área
-    col1, col2 = st.columns(2)
-    with col1:
-        nome_usuario = st.text_input("Seu Nome/Identificação:")
-    with col2:
-        area_sel = st.selectbox("Selecione a Área:", [""] + list(AREAS.keys()))
+# 1. Identificação e Área
+col1, col2 = st.columns(2)
+with col1:
+    area_selecionada = st.selectbox("Selecione a Área:", list(AREAS_CONFIG.keys()))
+with col2:
+    usuario = st.text_input("Identifique-se (Nome):")
 
-    if area_sel:
-        # 2. Validação de Senha
-        senha_input = st.text_input(f"Digite a senha para {area_sel}:", type="password")
+# 2. Validação de Senha
+senha_digitada = st.text_input("Digite a senha da área:", type="password")
+
+if senha_digitada == AREAS_CONFIG[area_selecionada]["senha"]:
+    st.success(f"Acesso liberado para {area_selecionada}")
+    
+    sub_area = st.selectbox("Selecione a Subdivisão:", AREAS_CONFIG[area_selecionada]["subdivisoes"])
+    
+    st.divider()
+    st.subheader(f"Checklist: {sub_area}")
+    
+    respostas = {}
+    
+    for item in AREAS_CONFIG[area_selecionada]["itens"]:
+        st.write(f"**{item}**")
+        status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"status_{item}", horizontal=True)
         
-        if senha_input == AREAS[area_sel]["senha"]:
-            st.success("Acesso Liberado")
-            sub_area = st.selectbox(f"Selecione o local de {area_sel}:", AREAS[area_sel]["sub"])
+        detalhes = {"status": status, "acao": None, "obs": ""}
+        
+        if status == "Não Conforme":
+            detalhes["acao"] = st.selectbox(
+                "Ação necessária:", 
+                ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], 
+                key=f"acao_{item}"
+            )
+            detalhes["obs"] = st.text_input("Observação (opcional):", key=f"obs_{item}")
+        
+        respostas[item] = detalhes
+        st.divider()
+
+    # Botão Finalizar
+    if st.button("Finalizar Inspeção"):
+        nao_conformidades = {k: v for k, v in respostas.items() if v["status"] == "Não Conforme"}
+        
+        if nao_conformidades:
+            registro = {
+                "Data": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "Usuário": usuario,
+                "Área": area_selecionada,
+                "Subdivisão": sub_area,
+                "Problemas": nao_conformidades
+            }
+            st.session_state.historico.append(registro)
+            st.warning("Relatório de Não Conformidades Gerado!")
+            st.write(nao_conformidades)
             
-            st.divider()
-            st.subheader(f"Checklist: {sub_area}")
-            
-            # 3. Formulário de Inspeção
-            respostas = {}
-            for item in AREAS[area_sel]["itens"]:
-                st.write(f"**Item: {item}**")
-                status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"rad_{item}", horizontal=True)
-                
-                detalhes = {"status": status, "acao": "", "obs": ""}
-                
-                if status == "Não Conforme":
-                    detalhes["acao"] = st.selectbox("Ação necessária:", 
-                                                   ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"],
-                                                   key=f"sel_{item}")
-                    detalhes["obs"] = st.text_input("Observação (Opcional):", key=f"txt_{item}")
-                
-                respostas[item] = detalhes
-                st.divider()
+            # Simulação de exportação
+            st.info("Opções de envio: [WhatsApp] [E-mail] [Gerar PDF]")
+        else:
+            st.success("Tudo em conformidade! Nenhuma ação necessária.")
 
-            # 4. Finalização
-            if st.button("Finalizar Inspeção"):
-                nao_conformidades = [
-                    {"Item": k, "Ação": v["acao"], "Obs": v["obs"]} 
-                    for k, v in respostas.items() if v["status"] == "Não Conforme"
-                ]
-                
-                registro = {
-                    "Data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    "Usuário": nome_usuario,
-                    "Área": area_sel,
-                    "Sub-área": sub_area,
-                    "Problemas": nao_conformidades
-                }
-                
-                st.session_state['historico'].append(registro)
-                st.balloons()
-                st.success("Inspeção salva com sucesso!")
+elif senha_digitada != "":
+    st.error("Senha incorreta.")
 
-                # Exibição do Relatório de Não Conformidades
-                if nao_conformidades:
-                    st.warning("### Relatório de Não Conformidades")
-                    df_nc = pd.DataFrame(nao_conformidades)
-                    st.table(df_nc)
-                    
-                    # Simulação de botões de exportação
-                    st.write("---")
-                    st.write("**Exportar Relatório:**")
-                    c1, c2, c3 = st.columns(3)
-                    c1.button("📩 Enviar por E-mail")
-                    c2.button("💬 Enviar WhatsApp")
-                    c3.button("📄 Gerar PDF (Download)")
-                else:
-                    st.info("Tudo em conformidade! Nenhum reparo necessário.")
-
-        elif senha_input != "":
-            st.error("Senha incorreta.")
-
-with tab2:
-    st.header("📋 Histórico de Inspeções")
-    if st.session_state['historico']:
-        for i, insp in enumerate(reversed(st.session_state['historico'])):
-            with st.expander(f"{insp['Data']} - {insp['Área']} ({insp['Sub-área']})"):
-                st.write(f"**Inspetor:** {insp['Usuário']}")
-                if insp['Problemas']:
-                    st.table(pd.DataFrame(insp['Problemas']))
-                else:
-                    st.write("Sem não conformidades.")
+# --- SEÇÃO DE HISTÓRICO ---
+st.sidebar.title("Navegação")
+if st.sidebar.checkbox("Ver Histórico de Inspeções"):
+    st.divider()
+    st.header("📜 Histórico")
+    if st.session_state.historico:
+        st.table(pd.DataFrame(st.session_state.historico))
     else:
-        st.write("Nenhuma inspeção realizada ainda.")
+        st.write("Nenhum registro encontrado.")
