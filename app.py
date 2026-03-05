@@ -1,123 +1,118 @@
 import streamlit as st
-from fpdf import FPDF
-import io
+import pandas as pd
+from datetime import datetime
+from io import BytesIO
 
-# Configuração inicial da página
+# Configuração da página
 st.set_page_config(page_title="Zelador Virtual", page_icon="🏢")
 
-# --- DADOS DE CONFIGURAÇÃO ---
+# --- BANCO DE DADOS TEMPORÁRIO (Simulado) ---
+if 'historico' not in st.session_state:
+    st.session_state['historico'] = []
+
+# --- CONFIGURAÇÕES DE DADOS ---
 AREAS = {
     "Sede Social": {
-        "senha": "SSICS",
-        "subdivisoes": ["Terraço", "1º Andar", "2º Andar"],
-        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
+        "sub": ["Terraço", "1º Andar", "2º Andar"],
+        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"],
+        "senha": "SSICS"
     },
     "Operacional": {
-        "senha": "OICS",
-        "subdivisoes": [
-            "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
-            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", 
-            "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
-        ],
-        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
+        "sub": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
+                "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
+                "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
+        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
+        "senha": "OPICS"
     }
 }
 
-# --- ESTADO DO APLICATIVO ---
-if 'relatorio' not in st.session_state:
-    st.session_state.relatorio = []
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-
 # --- INTERFACE ---
 st.title("🏢 Zelador Virtual")
-st.info("Sistema de Inspeção e Checklist")
+tab1, tab2 = st.tabs(["Nova Inspeção", "Histórico"])
 
-# 1. Identificação e Área
-col1, col2 = st.columns(2)
-with col1:
-    usuario = st.text_input("Identificação do Usuário:")
-with col2:
-    area_selecionada = st.selectbox("Selecione a Área:", ["Selecione..."] + list(AREAS.keys()))
+with tab1:
+    # 1. Identificação e Área
+    col1, col2 = st.columns(2)
+    with col1:
+        nome_usuario = st.text_input("Seu Nome/Identificação:")
+    with col2:
+        area_sel = st.selectbox("Selecione a Área:", [""] + list(AREAS.keys()))
 
-# 2. Autenticação
-if area_selecionada != "Selecione...":
-    senha_input = st.text_input("Digite a senha da área:", type="password")
-    
-    if senha_input == AREAS[area_selecionada]["senha"]:
-        st.success(f"Acesso liberado para {area_selecionada}")
+    if area_sel:
+        # 2. Validação de Senha
+        senha_input = st.text_input(f"Digite a senha para {area_sel}:", type="password")
         
-        # 3. Escolha da Subdivisão
-        subdivisao = st.selectbox("Selecione o local específico:", AREAS[area_selecionada]["subdivisoes"])
-        
-        st.divider()
-        st.subheader(f"Checklist: {subdivisao}")
-        
-        # 4. Formulário de Inspeção
-        inspecoes = {}
-        for item in AREAS[area_selecionada]["itens"]:
-            st.write(f"**Item: {item}**")
-            status = st.radio(f"Status de {item}", ["Conforme", "Não Conforme"], key=f"status_{item}", horizontal=True)
+        if senha_input == AREAS[area_sel]["senha"]:
+            st.success("Acesso Liberado")
+            sub_area = st.selectbox(f"Selecione o local de {area_sel}:", AREAS[area_sel]["sub"])
             
-            detalhes = ""
-            acao = ""
-            if status == "Não Conforme":
-                acao = st.selectbox(f"Ação necessária para {item}:", 
-                                    ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], 
-                                    key=f"acao_{item}")
-                detalhes = st.text_input(f"Observação adicional para {item} (Opcional):", key=f"obs_{item}")
-            
-            inspecoes[item] = {"status": status, "acao": acao, "detalhes": detalhes}
             st.divider()
-
-        # 5. Finalização
-        if st.button("Finalizar Checklist"):
-            nao_conformidades = []
-            for item, dados in inspecoes.items():
-                if dados["status"] == "Não Conforme":
-                    nao_conformidades.append({
-                        "Item": item,
-                        "Ação": dados["acao"],
-                        "Obs": dados["detalhes"]
-                    })
+            st.subheader(f"Checklist: {sub_area}")
             
-            if not nao_conformidades:
+            # 3. Formulário de Inspeção
+            respostas = {}
+            for item in AREAS[area_sel]["itens"]:
+                st.write(f"**Item: {item}**")
+                status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"rad_{item}", horizontal=True)
+                
+                detalhes = {"status": status, "acao": "", "obs": ""}
+                
+                if status == "Não Conforme":
+                    detalhes["acao"] = st.selectbox("Ação necessária:", 
+                                                   ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"],
+                                                   key=f"sel_{item}")
+                    detalhes["obs"] = st.text_input("Observação (Opcional):", key=f"txt_{item}")
+                
+                respostas[item] = detalhes
+                st.divider()
+
+            # 4. Finalização
+            if st.button("Finalizar Inspeção"):
+                nao_conformidades = [
+                    {"Item": k, "Ação": v["acao"], "Obs": v["obs"]} 
+                    for k, v in respostas.items() if v["status"] == "Não Conforme"
+                ]
+                
+                registro = {
+                    "Data": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    "Usuário": nome_usuario,
+                    "Área": area_sel,
+                    "Sub-área": sub_area,
+                    "Problemas": nao_conformidades
+                }
+                
+                st.session_state['historico'].append(registro)
                 st.balloons()
-                st.success("Inspeção concluída! Tudo em conformidade.")
-            else:
-                st.warning("Relatório de Não Conformidades Gerado!")
-                
-                # Montar texto do relatório
-                texto_relatorio = f"RELATÓRIO DE INSPEÇÃO - {area_selecionada} ({subdivisao})\n"
-                texto_relatorio += f"Inspetor: {usuario}\n"
-                texto_relatorio += "-"*30 + "\n"
-                for nc in nao_conformidades:
-                    texto_relatorio += f"🔴 {nc['Item']}: {nc['Ação']} | Obs: {nc['Obs']}\n"
-                
-                st.text_area("Resumo das ocorrências:", texto_relatorio, height=200)
+                st.success("Inspeção salva com sucesso!")
 
-                # --- EXPORTAÇÃO ---
-                
-                # Gerar PDF
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=12)
-                pdf.cell(200, 10, txt=f"Relatório de Zeladoria - {subdivisao}", ln=True, align='C')
-                pdf.ln(10)
-                pdf.multi_cell(0, 10, txt=texto_relatorio)
-                pdf_output = pdf.output(dest='S').encode('latin-1')
-                
-                st.download_button(label="📄 Baixar Relatório em PDF", 
-                                   data=pdf_output, 
-                                   file_name=f"inspecao_{subdivisao}.pdf", 
-                                   mime="application/pdf")
+                # Exibição do Relatório de Não Conformidades
+                if nao_conformidades:
+                    st.warning("### Relatório de Não Conformidades")
+                    df_nc = pd.DataFrame(nao_conformidades)
+                    st.table(df_nc)
+                    
+                    # Simulação de botões de exportação
+                    st.write("---")
+                    st.write("**Exportar Relatório:**")
+                    c1, c2, c3 = st.columns(3)
+                    c1.button("📩 Enviar por E-mail")
+                    c2.button("💬 Enviar WhatsApp")
+                    c3.button("📄 Gerar PDF (Download)")
+                else:
+                    st.info("Tudo em conformidade! Nenhum reparo necessário.")
 
-                # Links Externos
-                msg_whatsapp = f"https://wa.me/?text={texto_relatorio.replace(' ', '%20')}"
-                st.link_button("📲 Enviar por WhatsApp", msg_whatsapp)
-                
-                email_link = f"mailto:?subject=Relatorio%20Zeladoria&body={texto_relatorio.replace(' ', '%20')}"
-                st.link_button("📧 Enviar por E-mail", email_link)
+        elif senha_input != "":
+            st.error("Senha incorreta.")
 
-    elif senha_input != "":
-        st.error("Senha incorreta!")
+with tab2:
+    st.header("📋 Histórico de Inspeções")
+    if st.session_state['historico']:
+        for i, insp in enumerate(reversed(st.session_state['historico'])):
+            with st.expander(f"{insp['Data']} - {insp['Área']} ({insp['Sub-área']})"):
+                st.write(f"**Inspetor:** {insp['Usuário']}")
+                if insp['Problemas']:
+                    st.table(pd.DataFrame(insp['Problemas']))
+                else:
+                    st.write("Sem não conformidades.")
+    else:
+        st.write("Nenhuma inspeção realizada ainda.")
