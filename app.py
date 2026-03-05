@@ -1,100 +1,123 @@
 import streamlit as st
 from fpdf import FPDF
-import urllib.parse
+import io
 
-# Configurações de Estilo Personalizadas
-st.markdown("""
-    <style>
-    .titulo-inspecao {
-        color: #0000FF;
-        font-weight: bold;
-        font-size: 20px;
+# Configuração inicial da página
+st.set_page_config(page_title="Zelador Virtual", page_icon="🏢")
+
+# --- DADOS DE CONFIGURAÇÃO ---
+AREAS = {
+    "Sede Social": {
+        "senha": "SSICS",
+        "subdivisoes": ["Terraço", "1º Andar", "2º Andar"],
+        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
+    },
+    "Operacional": {
+        "senha": "OICS",
+        "subdivisoes": [
+            "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
+            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", 
+            "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
+        ],
+        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     }
-    </style>
-    """, unsafe_allow_html=True)
+}
 
-def main():
-    st.title("🏛️ Zelador Virtual")
+# --- ESTADO DO APLICATIVO ---
+if 'relatorio' not in st.session_state:
+    st.session_state.relatorio = []
+if 'autenticado' not in st.session_state:
+    st.session_state.autenticado = False
 
-    # 1. Seleção de Área
-    area = st.selectbox("Selecione a Área", ["Escolha...", "Sede Social", "Operacional"])
+# --- INTERFACE ---
+st.title("🏢 Zelador Virtual")
+st.info("Sistema de Inspeção e Checklist")
+
+# 1. Identificação e Área
+col1, col2 = st.columns(2)
+with col1:
+    usuario = st.text_input("Identificação do Usuário:")
+with col2:
+    area_selecionada = st.selectbox("Selecione a Área:", ["Selecione..."] + list(AREAS.keys()))
+
+# 2. Autenticação
+if area_selecionada != "Selecione...":
+    senha_input = st.text_input("Digite a senha da área:", type="password")
     
-    if area == "Escolha...":
-        st.info("Por favor, selecione uma área para começar.")
-        return
-
-    # 2. Identificação e Senha
-    nome_usuario = st.text_input("Identifique-se (Seu Nome):")
-    senha_digitada = st.text_input("Digite a senha da área:", type="password")
-
-    # Validação de Senha
-    senhas = {"Sede Social": "SSICS", "Operacional": "OICS"}
-    
-    if senha_digitada == senhas[area]:
-        st.success(f"Acesso liberado: {area}")
+    if senha_input == AREAS[area_selecionada]["senha"]:
+        st.success(f"Acesso liberado para {area_selecionada}")
         
-        # 3. Definição de Subdivisões e Itens
-        if area == "Sede Social":
-            subdivisoes = ["Terraço", "1º Andar", "2º Andar"]
-            itens_inspecao = ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
-        else:
-            subdivisoes = ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", 
-                           "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"]
-            itens_inspecao = ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
-
-        sub_escolhida = st.selectbox(f"Selecione o local em {area}", subdivisoes)
+        # 3. Escolha da Subdivisão
+        subdivisao = st.selectbox("Selecione o local específico:", AREAS[area_selecionada]["subdivisoes"])
         
-        # 4. Checklist de Inspeção
-        st.markdown(f'<p class="titulo-inspecao">{sub_escolhida}</p>', unsafe_allow_html=True)
+        st.divider()
+        st.subheader(f"Checklist: {subdivisao}")
         
-        relatorio_nc = []
-
-        for item in itens_inspecao:
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                status = st.radio(f"Status: {item}", ["Conforme", "Não Conforme"], key=f"radio_{item}")
+        # 4. Formulário de Inspeção
+        inspecoes = {}
+        for item in AREAS[area_selecionada]["itens"]:
+            st.write(f"**Item: {item}**")
+            status = st.radio(f"Status de {item}", ["Conforme", "Não Conforme"], key=f"status_{item}", horizontal=True)
             
+            detalhes = ""
+            acao = ""
             if status == "Não Conforme":
-                with col2:
-                    acao = st.selectbox("Ação Necessária", ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], key=f"acao_{item}")
-                    obs = st.text_input("Observação (Opcional)", key=f"obs_{item}")
-                    relatorio_nc.append({"Item": item, "Problema": acao, "Obs": obs})
+                acao = st.selectbox(f"Ação necessária para {item}:", 
+                                    ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], 
+                                    key=f"acao_{item}")
+                detalhes = st.text_input(f"Observação adicional para {item} (Opcional):", key=f"obs_{item}")
+            
+            inspecoes[item] = {"status": status, "acao": acao, "detalhes": detalhes}
             st.divider()
 
-        # 5. Finalização e Relatórios
-        if st.button("Finalizar e Gerar Relatório"):
-            if not relatorio_nc:
+        # 5. Finalização
+        if st.button("Finalizar Checklist"):
+            nao_conformidades = []
+            for item, dados in inspecoes.items():
+                if dados["status"] == "Não Conforme":
+                    nao_conformidades.append({
+                        "Item": item,
+                        "Ação": dados["acao"],
+                        "Obs": dados["detalhes"]
+                    })
+            
+            if not nao_conformidades:
                 st.balloons()
-                st.success("Tudo em conformidade! Nenhum relatório gerado.")
+                st.success("Inspeção concluída! Tudo em conformidade.")
             else:
-                st.subheader("Relatório de Não Conformidades")
-                resumo_texto = f"Relatório de Inspeção - {area} ({sub_escolhida})\nInspetor: {nome_usuario}\n\n"
-                for nc in relatorio_nc:
-                    resumo_texto += f"- {nc['Item']}: {nc['Problema']} ({nc['Obs']})\n"
+                st.warning("Relatório de Não Conformidades Gerado!")
                 
-                st.text_area("Conteúdo do Relatório", resumo_texto, height=200)
+                # Montar texto do relatório
+                texto_relatorio = f"RELATÓRIO DE INSPEÇÃO - {area_selecionada} ({subdivisao})\n"
+                texto_relatorio += f"Inspetor: {usuario}\n"
+                texto_relatorio += "-"*30 + "\n"
+                for nc in nao_conformidades:
+                    texto_relatorio += f"🔴 {nc['Item']}: {nc['Ação']} | Obs: {nc['Obs']}\n"
+                
+                st.text_area("Resumo das ocorrências:", texto_relatorio, height=200)
 
-                # Botão WhatsApp
-                msg_whatsapp = urllib.parse.quote(resumo_texto)
-                st.markdown(f"[📲 Enviar por WhatsApp](https://wa.me/?text={msg_whatsapp})")
-
-                # Botão E-mail
-                assunto = f"Inspecao_{area}_{sub_escolhida}"
-                st.markdown(f"[📧 Enviar por E-mail](mailto:?subject={assunto}&body={msg_whatsapp})")
-
-                # Geração de PDF (Simples)
+                # --- EXPORTAÇÃO ---
+                
+                # Gerar PDF
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font("Arial", size=12)
-                pdf.cell(200, 10, txt=f"Relatório de Zeladoria - {area}", ln=True, align='C')
-                for line in resumo_texto.split('\n'):
-                    pdf.cell(200, 10, txt=line, ln=True)
-                
+                pdf.cell(200, 10, txt=f"Relatório de Zeladoria - {subdivisao}", ln=True, align='C')
+                pdf.ln(10)
+                pdf.multi_cell(0, 10, txt=texto_relatorio)
                 pdf_output = pdf.output(dest='S').encode('latin-1')
-                st.download_button(label="📄 Baixar Relatório em PDF", data=pdf_output, file_name="relatorio_zeladoria.pdf", mime="application/pdf")
+                
+                st.download_button(label="📄 Baixar Relatório em PDF", 
+                                   data=pdf_output, 
+                                   file_name=f"inspecao_{subdivisao}.pdf", 
+                                   mime="application/pdf")
 
-    elif senha_digitada != "":
+                # Links Externos
+                msg_whatsapp = f"https://wa.me/?text={texto_relatorio.replace(' ', '%20')}"
+                st.link_button("📲 Enviar por WhatsApp", msg_whatsapp)
+                
+                email_link = f"mailto:?subject=Relatorio%20Zeladoria&body={texto_relatorio.replace(' ', '%20')}"
+                st.link_button("📧 Enviar por E-mail", email_link)
+
+    elif senha_input != "":
         st.error("Senha incorreta!")
-
-if __name__ == "__main__":
-    main()
