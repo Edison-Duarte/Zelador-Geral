@@ -1,27 +1,19 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import sqlite3
-from PIL import Image
-import io
+import os
 
-# --- CONFIGURAÇÃO E BANCO DE DADOS ---
-st.set_page_config(page_title="Zelador Virtual ICS", layout="centered")
+# --- CONFIGURAÇÕES INICIAIS ---
+st.set_page_config(page_title="Zelador Virtual", layout="wide")
 
-def init_db():
-    conn = sqlite3.connect('zeladoria_v2.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS inspecoes 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT, inspetor TEXT, 
-                  area TEXT, sub_area TEXT, item TEXT, status TEXT, 
-                  motivo TEXT, detalhe TEXT, foto BLOB)''')
-    conn.commit()
-    conn.close()
+# Inicialização do arquivo de histórico
+HISTORICO_FILE = "historico_inspecoes.csv"
+if not os.path.exists(HISTORICO_FILE):
+    df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Tipo_Falha", "Detalhes", "Foto_Path"])
+    df_init.to_csv(HISTORICO_FILE, index=False)
 
-init_db()
-
-# --- LÓGICA DE NEGÓCIO ---
-areas_config = {
+# --- BANCO DE DADOS DE ÁREAS ---
+AREAS = {
     "Sede Social": {
         "senha": "SSICS",
         "subs": ["Terraço", "1º Andar", "2º Andar"],
@@ -29,9 +21,7 @@ areas_config = {
     },
     "Operacional": {
         "senha": "OPICS",
-        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
-                 "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
-                 "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     }
 }
@@ -39,86 +29,96 @@ areas_config = {
 # --- INTERFACE ---
 st.title("🏛️ Zelador Virtual")
 
-menu = st.sidebar.selectbox("Menu", ["Nova Inspeção", "Histórico de NC"])
+menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
 if menu == "Nova Inspeção":
-    area_sel = st.selectbox("Selecione a Área", [""] + list(areas_config.keys()))
+    st.header("📋 Check-list de Inspeção")
     
-    if area_sel:
-        senha = st.text_input("Senha de Acesso", type="password")
-        if senha == areas_config[area_sel]["senha"]:
-            nome_inspetor = st.text_input("Nome do Inspetor")
-            sub_sel = st.selectbox("Subdivisão", areas_config[area_sel]["subs"])
+    # Identificação
+    nome_usuario = st.text_input("Seu nome:")
+    area_selecionada = st.selectbox("Selecione a Área:", ["Selecione..."] + list(AREAS.keys()))
+
+    if area_selecionada != "Selecione...":
+        senha_input = st.text_input("Senha da Área:", type="password")
+        
+        if senha_input == AREAS[area_selecionada]["senha"]:
+            st.success("Acesso Liberado!")
+            sub_area = st.selectbox(f"Subdivisão de {area_selecionada}:", AREAS[area_selecionada]["subs"])
             
             st.divider()
-            st.subheader(f"Checklist: {sub_sel}")
+            st.subheader(f"Inspecionando: {sub_area}")
             
             respostas = []
-            for item in areas_config[area_sel]["itens"]:
-                col1, col2 = st.columns([2, 3])
+            
+            for item in AREAS[area_selecionada]["itens"]:
+                col1, col2 = st.columns([1, 2])
                 with col1:
-                    st.write(f"**{item}**")
-                    status = st.radio(f"Status_{item}", ["Conforme", "Não Conforme"], label_visibility="collapsed", horizontal=True)
+                    status = st.radio(f"**{item}**", ["Conforme", "Não Conforme"], key=item)
                 
-                detalhes_nc = {"item": item, "status": status, "motivo": None, "obs": "", "foto": None}
+                falha_tipo = ""
+                detalhe = ""
+                foto_nome = ""
                 
                 if status == "Não Conforme":
                     with col2:
-                        detalhes_nc["motivo"] = st.selectbox(f"Motivo_{item}", ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"])
-                        detalhes_nc["obs"] = st.text_input(f"Obs_{item}", placeholder="Especifique o problema (opcional)")
-                        detalhes_nc["foto"] = st.file_uploader(f"Foto_{item}", type=['png', 'jpg', 'jpeg'])
+                        falha_tipo = st.selectbox(f"Tipo de falha ({item})", ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], key=f"tipo_{item}")
+                        detalhe = st.text_input(f"Observações ({item})", key=f"obs_{item}")
+                        foto = st.file_uploader(f"Foto da Não Conformidade ({item})", type=["jpg", "png", "jpeg"], key=f"foto_{item}")
+                        if foto:
+                            # Salva a foto localmente
+                            foto_nome = f"fotos/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{item}.jpg"
+                            os.makedirs("fotos", exist_ok=True)
+                            with open(foto_nome, "wb") as f:
+                                f.write(foto.getbuffer())
                 
-                respostas.append(detalhes_nc)
-                st.divider()
+                respostas.append({
+                    "Item": item, "Status": status, "Tipo_Falha": falha_tipo, 
+                    "Detalhes": detalhe, "Foto_Path": foto_nome
+                })
 
-            if st.button("Finalizar e Gerar Relatório"):
-                if not nome_inspetor:
-                    st.error("Por favor, identifique-se antes de finalizar.")
+            if st.button("Finalizar Inspeção"):
+                # Filtrar apenas não conformidades para o relatório
+                ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
+                
+                # Salvar no histórico (CSV)
+                novo_registro = []
+                for r in respostas:
+                    novo_registro.append([datetime.now().strftime("%d/%m/%Y %H:%M"), nome_usuario, area_selecionada, sub_area, r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]])
+                
+                df_hist = pd.read_csv(HISTORICO_FILE)
+                df_novo = pd.DataFrame(novo_registro, columns=df_hist.columns)
+                pd.concat([df_hist, df_novo]).to_csv(HISTORICO_FILE, index=False)
+
+                st.warning("⚠️ Relatório de Não Conformidades Gerado!")
+                if ncs:
+                    df_relatorio = pd.DataFrame(ncs)
+                    st.table(df_relatorio[["Item", "Tipo_Falha", "Detalhes"]])
+                    
+                    # Simulação de botões de exportação
+                    st.write("---")
+                    st.button("📧 Enviar por E-mail")
+                    st.button("💬 Enviar via WhatsApp")
+                    st.button("📄 Gerar PDF")
                 else:
-                    conn = sqlite3.connect('zeladoria_v2.db')
-                    c = conn.cursor()
-                    data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    
-                    for r in respostas:
-                        foto_data = r["foto"].read() if r["foto"] else None
-                        c.execute("INSERT INTO inspecoes (data, inspetor, area, sub_area, item, status, motivo, detalhe, foto) VALUES (?,?,?,?,?,?,?,?,?)",
-                                  (data_atual, nome_inspetor, area_sel, sub_sel, r['item'], r['status'], r['motivo'], r['obs'], foto_data))
-                    
-                    conn.commit()
-                    conn.close()
-                    st.success("Relatório salvo com sucesso!")
-                    
-                    # Filtro de NC para exibição imediata
-                    ncs = [r for r in respostas if r["status"] == "Não Conforme"]
-                    if ncs:
-                        st.warning("⚠️ Não Conformidades Encontradas:")
-                        for nc in ncs:
-                            st.write(f"- {nc['item']}: {nc['motivo']} ({nc['obs']})")
-                        
-                        st.info("Para exportar PDF ou enviar por WhatsApp, acesse a aba 'Histórico'.")
-                    else:
-                        st.balloons()
-        elif senha != "":
-            st.error("Senha incorreta.")
+                    st.success("Tudo em conformidade! Nenhuma ação necessária.")
 
-elif menu == "Histórico de NC":
-    st.subheader("📋 Histórico de Não Conformidades")
-    conn = sqlite3.connect('zeladoria_v2.db')
-    df = pd.read_sql_query("SELECT id, data, inspetor, area, sub_area, item, motivo, detalhe FROM inspecoes WHERE status = 'Não Conforme'", conn)
+        elif senha_input != "":
+            st.error("Senha incorreta!")
+
+elif menu == "Histórico":
+    st.header("📂 Histórico de Inspeções")
+    df_hist = pd.read_csv(HISTORICO_FILE)
     
-    if not df.empty:
-        st.dataframe(df)
-        
-        id_foto = st.number_input("Digite o ID para ver a foto", min_value=int(df['id'].min()), max_value=int(df['id'].max()))
-        if st.button("Visualizar Foto"):
-            c = conn.cursor()
-            c.execute("SELECT foto FROM inspecoes WHERE id = ?", (id_foto,))
-            img_data = c.fetchone()[0]
-            if img_data:
-                image = Image.open(io.BytesIO(img_data))
-                st.image(image, caption=f"Evidência ID {id_foto}")
-            else:
-                st.warning("Sem foto para este registro.")
+    # Mostrar apenas Não Conformidades no histórico para facilitar a gestão
+    df_ncs = df_hist[df_hist["Status"] == "Não Conforme"]
+    
+    if not df_ncs.empty:
+        for idx, row in df_ncs.iterrows():
+            with st.expander(f"{row['Data']} - {row['Area']} ({row['Subdivisao']}) - {row['Item']}"):
+                st.write(f"**Usuário:** {row['Usuario']}")
+                st.write(f"**Tipo:** {row['Tipo_Falha']}")
+                st.write(f"**Detalhes:** {row['Detalhes']}")
+                if str(row['Foto_Path']) != "nan" and row['Foto_Path'] != "":
+                    st.image(row['Foto_Path'], width=300)
     else:
-        st.write("Nenhuma não conformidade registrada.")
-    conn.close()
+        st.info("Nenhuma não conformidade registrada até o momento.")
