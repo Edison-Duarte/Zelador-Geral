@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import urllib.parse
 from fpdf import FPDF
@@ -16,7 +16,6 @@ if not os.path.exists(HISTORICO_FILE):
     df_init.to_csv(HISTORICO_FILE, index=False)
 
 # --- BANCO DE DADOS DE ÁREAS ---
-# Adicionado: 'periodicidade_dias' para controle automático
 AREAS = {
     "Sede Social": {
         "senha": "SSICS",
@@ -28,11 +27,11 @@ AREAS = {
         "senha": "OPICS",
         "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
-        "periodicidade_dias": 7  # Hangares a cada 7 dias
+        "periodicidade_dias": 7  # Periodicidade de 7 dias para hangares
     }
 }
 
-# --- FUNÇÕES DE APOIO ---
+# --- FUNÇÕES ---
 
 def gerar_pdf(ncs, area, subarea, usuario):
     pdf = FPDF()
@@ -62,15 +61,10 @@ def gerar_pdf(ncs, area, subarea, usuario):
     return bytes(pdf.output())
 
 def verificar_pendencias():
-    """Analisa o histórico e retorna áreas que precisam de inspeção"""
-    if not os.path.exists(HISTORICO_FILE):
-        return []
-    
+    if not os.path.exists(HISTORICO_FILE): return []
     try:
         df = pd.read_csv(HISTORICO_FILE)
         if df.empty: return []
-        
-        # Converte a coluna Data para objeto datetime para cálculo
         df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
         pendencias = []
         hoje = datetime.now()
@@ -78,46 +72,31 @@ def verificar_pendencias():
         for area, info in AREAS.items():
             prazo = info['periodicidade_dias']
             for sub in info['subs']:
-                # Localiza a última vez que esta subdivisão foi inspecionada
                 ultima = df[(df['Area'] == area) & (df['Subdivisao'] == sub)]
-                
                 if ultima.empty:
-                    pendencias.append({"local": f"{area} - {sub}", "msg": "Nunca inspecionado", "cor": "red"})
+                    pendencias.append(f"{area} - {sub} (Nunca inspecionado)")
                 else:
-                    data_ultima = ultima['Data_dt'].max()
-                    dias_passados = (hoje - data_ultima).days
-                    
-                    if dias_passados >= prazo:
-                        pendencias.append({"local": f"{area} - {sub}", "msg": f"Atrasado ({dias_passados} dias)", "cor": "red"})
-                    elif dias_passados >= (prazo - 1): # Alerta de 1 dia de antecedência
-                        pendencias.append({"local": f"{area} - {sub}", "msg": "Vence amanhã", "cor": "orange"})
+                    dias = (hoje - ultima['Data_dt'].max()).days
+                    if dias >= prazo:
+                        pendencias.append(f"{area} - {sub} (Vencido há {dias} dias)")
         return pendencias
-    except:
-        return []
+    except: return []
 
-# --- INTERFACE STREAMLIT ---
+# --- INTERFACE ---
 st.title("🏛️ Zelador Virtual")
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
 if menu == "Nova Inspeção":
     st.header("📋 Check-list de Inspeção")
     
-    # --- PAINEL DE ORIENTAÇÃO (PERIODICIDADE) ---
-    pendencias = verificar_pendencias()
-    if pendencias:
-        with st.expander("⚠️ ATENÇÃO: ÁREAS PENDENTES", expanded=True):
-            st.info("As seguintes áreas ultrapassaram o prazo de inspeção recomendado:")
-            for p in pendencias:
-                if p['cor'] == "red":
-                    st.error(f"**{p['local']}**: {p['msg']}")
-                else:
-                    st.warning(f"**{p['local']}**: {p['msg']}")
-    else:
-        st.success("✅ Todas as inspeções periódicas estão em dia!")
+    # --- AVISO DE PERIODICIDADE ---
+    pendentes = verificar_pendencias()
+    if pendentes:
+        st.warning("⚠️ **Hoje devem ser inspecionadas as áreas:**")
+        for p in pendentes:
+            st.write(f"• {p}")
+        st.divider()
 
-    st.divider()
-
-    # --- FORMULÁRIO ---
     nome_usuario = st.text_input("Seu nome (Inspetor):")
     area_selecionada = st.selectbox("Selecione a Área Principal:", ["Selecione..."] + list(AREAS.keys()))
 
@@ -150,11 +129,9 @@ if menu == "Nova Inspeção":
 
             if st.button("Finalizar e Gerar Relatório"):
                 if not nome_usuario:
-                    st.error("Por favor, digite seu nome antes de finalizar.")
+                    st.error("Por favor, digite seu nome.")
                 else:
                     ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
-                    
-                    # Salvar no histórico (CSV)
                     data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
                     novo_registro = [[data_atual, nome_usuario, area_selecionada, sub_area, r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
                     df_hist = pd.read_csv(HISTORICO_FILE)
@@ -162,55 +139,36 @@ if menu == "Nova Inspeção":
 
                     if ncs:
                         st.warning(f"⚠️ {len(ncs)} Não Conformidades encontradas!")
-                        
-                        # PDF
                         pdf_bytes = gerar_pdf(ncs, area_selecionada, sub_area, nome_usuario)
                         st.download_button("📥 1º Baixar PDF do Relatório", pdf_bytes, f"Relatorio_{sub_area}.pdf", "application/pdf")
 
-                        # Texto formatado
-                        corpo_msg = f"Relatório de Inspeção - Zeladoria\n"
-                        corpo_msg += f"Local: {area_selecionada} ({sub_area})\n"
-                        corpo_msg += f"Inspetor Responsável: {nome_usuario}\n"
-                        corpo_msg += "-"*30 + "\n\n"
-                        corpo_msg += "ITENS PONTUADOS:\n"
+                        corpo_msg = f"Relatório de Inspeção\nLocal: {area_selecionada} ({sub_area})\nInspetor: {nome_usuario}\n\n"
                         for nc in ncs:
                             corpo_msg += f"• {nc['Item']}: {nc['Tipo_Falha']}\n  Obs: {nc['Detalhes']}\n\n"
                         
-                        # Links de comunicação
-                        assunto = f"Manutenção Urgente: {sub_area}"
-                        link_mailto = f"mailto:?subject={urllib.parse.quote(assunto)}&body={urllib.parse.quote(corpo_msg)}"
+                        link_mailto = f"mailto:?subject=Manutencao%20{sub_area}&body={urllib.parse.quote(corpo_msg)}"
                         st.link_button("📧 2º Abrir meu E-mail", link_mailto)
-                        
                         link_zap = f"https://api.whatsapp.com/send?text={urllib.parse.quote(corpo_msg)}"
                         st.link_button("💬 Enviar via WhatsApp", link_zap)
                     else:
                         st.success(f"Tudo em conformidade! Registrado por {nome_usuario}.")
-                        st.balloons()
 
 elif menu == "Histórico":
     st.header("📂 Histórico de Inspeções")
     if os.path.exists(HISTORICO_FILE):
         df_hist = pd.read_csv(HISTORICO_FILE)
-        
-        # Filtro simples para ver apenas NCs ou tudo
-        ver_tudo = st.checkbox("Mostrar itens 'Conforme' também")
-        if not ver_tudo:
-            df_hist = df_hist[df_hist["Status"] == "Não Conforme"]
-
-        if not df_hist.empty:
-            for idx, row in df_hist.iloc[::-1].iterrows():
-                icone = "❌" if row['Status'] == "Não Conforme" else "✅"
-                with st.expander(f"{icone} {row['Data']} | {row['Item']} - {row['Subdivisao']}"):
+        df_ncs = df_hist[df_hist["Status"] == "Não Conforme"]
+        if not df_ncs.empty:
+            for idx, row in df_ncs.iloc[::-1].iterrows():
+                with st.expander(f"🗓️ {row['Data']} | {row['Item']} - {row['Subdivisao']} (Por: {row['Usuario']})"):
                     col_info, col_img = st.columns([2, 1])
                     with col_info:
                         st.write(f"**👤 Inspetor:** {row['Usuario']}")
                         st.write(f"**📍 Área:** {row['Area']} - {row['Subdivisao']}")
-                        st.write(f"**🛠️ Status:** {row['Status']}")
-                        if row['Status'] == "Não Conforme":
-                            st.write(f"**⚠️ Falha:** {row['Tipo_Falha']}")
-                            st.write(f"**📝 Detalhes:** {row['Detalhes']}")
+                        st.write(f"**🛠️ Falha:** {row['Tipo_Falha']}")
+                        st.write(f"**📝 Detalhes:** {row['Detalhes']}")
                     with col_img:
                         if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
-            st.info("Nenhum registro encontrado.")
+            st.info("Nenhuma falha registrada.")
