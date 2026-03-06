@@ -13,8 +13,8 @@ if not os.path.exists(HISTORICO_FILE):
     df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Tipo_Falha", "Detalhes", "Foto_Path"])
     df_init.to_csv(HISTORICO_FILE, index=False)
 
-# --- BANCO DE DADOS COM CRITÉRIOS DE PERIODICIDADE ---
-# frequencia: 1 (Todo dia), 7 (Semanal), 30 (Mensal)
+# --- BANCO DE DADOS COM CRITÉRIOS DE CRONOGRAMA ---
+# frequencia: 1 = Diária | 7 = Semanal
 AREAS = {
     "Sede Social": {
         "senha": "SSICS",
@@ -30,43 +30,38 @@ AREAS = {
     }
 }
 
-# --- FUNÇÕES DE APOIO ---
+# --- FUNÇÕES DE LÓGICA ---
 def carregar_historico():
     return pd.read_csv(HISTORICO_FILE)
 
-def verificar_agenda():
+def verificar_cronograma():
     df = carregar_historico()
     hoje = datetime.now()
-    inspeções_necessarias = []
+    pendencias = []
 
     for area_nome, info in AREAS.items():
         for sub in info["subs"]:
-            # Filtrar histórico desta sub-área
             filtro = df[(df["Area"] == area_nome) & (df["Subdivisao"] == sub)].copy()
             
             pode_fazer = False
-            motivo = ""
+            msg_motivo = ""
             
             if filtro.empty:
                 pode_fazer = True
-                motivo = "Nunca realizada"
+                msg_motivo = "Primeira inspeção necessária"
             else:
-                # Conversão segura da data
                 datas = pd.to_datetime(filtro["Data"], format="%d/%m/%Y %H:%M", errors='coerce')
                 ultima_data = datas.max()
                 
                 if pd.notnull(ultima_data):
-                    dias_desde_ultima = (hoje - ultima_data).days
-                    if dias_desde_ultima >= info["frequencia"]:
+                    dias_passados = (hoje - ultima_data).days
+                    if dias_passados >= info["frequencia"]:
                         pode_fazer = True
-                        motivo = f"Última há {dias_desde_ultima} dias"
-                else:
-                    pode_fazer = True # Erro na data, assume que precisa fazer
-
+                        msg_motivo = f"Última realizada há {dias_passados} dias"
+            
             if pode_fazer:
-                inspeções_necessarias.append({"area": area_nome, "sub": sub, "motivo": motivo})
-    
-    return inspeções_necessarias
+                pendencias.append({"area": area_nome, "sub": sub, "motivo": msg_motivo})
+    return pendencias
 
 def gerar_pdf(ncs, area, subarea, usuario):
     pdf = FPDF()
@@ -87,86 +82,85 @@ def gerar_pdf(ncs, area, subarea, usuario):
     return bytes(pdf.output())
 
 # --- INTERFACE ---
-st.sidebar.title("Navegação")
-menu = st.sidebar.radio("Ir para:", ["📅 Agenda de Hoje", "📂 Histórico Geral"])
+st.title("🏛️ Zelador Virtual")
+menu = st.sidebar.selectbox("Navegação", ["📅 Agenda de Hoje", "📂 Histórico"])
 
 if menu == "📅 Agenda de Hoje":
-    st.header("🗓️ Cronograma de Inspeções")
+    st.header("📋 Cronograma de Inspeções")
     
-    pendencias = verificar_agenda()
+    lista_hoje = verificar_cronograma()
     
-    if not pendencias:
-        st.success("✅ Todas as áreas estão com as inspeções em dia!")
+    if not lista_hoje:
+        st.success("✅ Todas as áreas foram inspecionadas dentro do prazo!")
     else:
-        st.info(f"Atenção: Você tem {len(pendencias)} áreas aguardando inspeção.")
-        
-        # Exibir Alertas Dinâmicos
-        for p in pendencias:
+        for p in lista_hoje:
             with st.container():
-                col1, col2 = st.columns([3, 1])
-                col1.warning(f"🔔 **Hoje deve ser feita a inspeção do {p['sub']}** ({p['area']})")
-                col1.caption(f"Motivo: {p['motivo']}")
+                col_txt, col_btn = st.columns([3, 1])
+                # MENSAGEM SOLICITADA:
+                col_txt.warning(f"🔔 **Hoje deve ser feita a inspeção do {p['sub']}** ({p['area']})")
+                col_txt.caption(f"Motivo: {p['motivo']}")
                 
-                if col2.button(f"Iniciar {p['sub']}", key=f"btn_{p['sub']}"):
+                if col_btn.button(f"Iniciar {p['sub']}", key=f"btn_{p['sub']}"):
                     st.session_state["em_inspecao"] = True
                     st.session_state["area_ativa"] = p['area']
                     st.session_state["sub_ativa"] = p['sub']
 
-    # Formulário de Inspeção (Só aparece se clicar em Iniciar)
+    # FORMULÁRIO (Abre dinamicamente)
     if st.session_state.get("em_inspecao"):
         st.divider()
-        st.subheader(f"📝 Formulário: {st.session_state['sub_ativa']}")
+        st.subheader(f"📝 Checklist: {st.session_state['sub_ativa']}")
         
-        nome = st.text_input("Seu Nome:")
-        senha = st.text_input("Senha da Área:", type="password")
+        nome_inspetor = st.text_input("Nome do Inspetor:")
+        senha_area = st.text_input("Senha de Acesso:", type="password")
         
-        if senha == AREAS[st.session_state["area_ativa"]]["senha"]:
+        if senha_area == AREAS[st.session_state["area_ativa"]]["senha"]:
             respostas = []
             for item in AREAS[st.session_state["area_ativa"]]["itens"]:
                 c1, c2 = st.columns([1, 2])
                 with c1:
                     status = st.radio(f"**{item}**", ["Conforme", "Não Conforme"], key=f"s_{item}")
                 
-                tp, obs, foto_p = "", "", ""
+                tp, obs, f_path = "", "", ""
                 if status == "Não Conforme":
                     with c2:
-                        tp = st.selectbox("Tipo", ["Limpeza", "Pintura", "Reparo", "Troca"], key=f"t_{item}")
-                        obs = st.text_input("Observação", key=f"o_{item}")
-                        f = st.file_uploader("Foto", type=["jpg", "png"], key=f"f_{item}")
-                        if f:
-                            foto_p = f"fotos/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{item}.jpg"
+                        tp = st.selectbox("Tipo de falha", ["Limpeza", "Pintura", "Reparo", "Troca"], key=f"t_{item}")
+                        obs = st.text_input("Observações", key=f"o_{item}")
+                        foto = st.file_uploader("Foto da falha", type=["jpg", "png"], key=f"f_{item}")
+                        if foto:
+                            f_path = f"fotos/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{item}.jpg"
                             os.makedirs("fotos", exist_ok=True)
-                            with open(foto_p, "wb") as file: file.write(f.getbuffer())
+                            with open(f_path, "wb") as f: f.write(foto.getbuffer())
                 
-                respostas.append({"Item": item, "Status": status, "Tipo_Falha": tp, "Detalhes": obs, "Foto_Path": foto_p})
+                respostas.append({"Item": item, "Status": status, "Tipo_Falha": tp, "Detalhes": obs, "Foto_Path": f_path})
 
-            if st.button("Finalizar e Registrar"):
-                if not nome:
-                    st.error("Identifique-se primeiro.")
+            if st.button("Finalizar e Enviar Relatório"):
+                if not nome_inspetor:
+                    st.error("Digite seu nome para assinar o relatório.")
                 else:
-                    data_hoje = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    linhas = [[data_hoje, nome, st.session_state['area_ativa'], st.session_state['sub_ativa'], r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
+                    # Salva no histórico
+                    data_agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    novos_dados = [[data_agora, nome_inspetor, st.session_state['area_ativa'], st.session_state['sub_ativa'], r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
                     df_h = carregar_historico()
-                    pd.concat([df_h, pd.DataFrame(linhas, columns=df_h.columns)]).to_csv(HISTORICO_FILE, index=False)
+                    pd.concat([df_h, pd.DataFrame(novas_dados, columns=df_h.columns)]).to_csv(HISTORICO_FILE, index=False)
                     
-                    st.success("Inspeção salva!")
+                    st.success("✅ Inspeção registrada com sucesso!")
                     
-                    # Notificações de falha
+                    # Gerar alertas se houver falhas
                     ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
                     if ncs:
-                        pdf = gerar_pdf(ncs, st.session_state['area_ativa'], st.session_state['sub_ativa'], nome)
-                        st.download_button("📥 Baixar PDF das Falhas", pdf, "Relatorio.pdf")
+                        pdf = gerar_pdf(ncs, st.session_state['area_ativa'], st.session_state['sub_ativa'], nome_inspetor)
+                        st.download_button("📥 1. Baixar PDF", pdf, "Relatorio.pdf")
                         
-                        msg = f"Atenção: Falhas no {st.session_state['sub_ativa']}\nInspetor: {nome}\n"
-                        for n in ncs: msg += f"- {n['Item']}: {n['Tipo_Falha']}\n"
+                        corpo = f"Falhas detectadas no {st.session_state['sub_ativa']}\nInspetor: {nome_inspetor}\n"
+                        for n in ncs: corpo += f"- {n['Item']}: {n['Tipo_Falha']}\n"
                         
-                        st.link_button("📧 Abrir E-mail", f"mailto:?subject=Falhas&body={urllib.parse.quote(msg)}")
+                        st.link_button("📧 2. Enviar por E-mail", f"mailto:?subject=Alerta%20Zeladoria&body={urllib.parse.quote(corpo)}")
                     
                     st.session_state["em_inspecao"] = False
                     st.rerun()
 
-elif menu == "📂 Histórico Geral":
-    st.header("📂 Últimas Não Conformidades")
+elif menu == "📂 Histórico":
+    st.header("📂 Histórico de Falhas")
     df = carregar_historico()
     df_ncs = df[df["Status"] == "Não Conforme"]
     for _, row in df_ncs.iloc[::-1].iterrows():
