@@ -1,35 +1,37 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
+import sqlite3
+from PIL import Image
+import io
 
-# --- CONFIGURAÇÕES INICIAIS ---
+# --- CONFIGURAÇÃO E BANCO DE DADOS ---
 st.set_page_config(page_title="Zelador Virtual ICS", layout="centered")
 
-# Simulação de banco de dados local
-DB_FILE = "historico_inspecoes.csv"
+def init_db():
+    conn = sqlite3.connect('zeladoria_v2.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS inspecoes 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT, inspetor TEXT, 
+                  area TEXT, sub_area TEXT, item TEXT, status TEXT, 
+                  motivo TEXT, detalhe TEXT, foto BLOB)''')
+    conn.commit()
+    conn.close()
 
-def salvar_dados(dados):
-    df = pd.DataFrame(dados)
-    if not os.path.isfile(DB_FILE):
-        df.to_csv(DB_FILE, index=False)
-    else:
-        df.to_csv(DB_FILE, mode='a', header=False, index=False)
+init_db()
 
-# --- ESTRUTURA DE DADOS ---
-AREAS = {
+# --- LÓGICA DE NEGÓCIO ---
+areas_config = {
     "Sede Social": {
         "senha": "SSICS",
-        "subdivisoes": ["Terraço", "1º Andar", "2º Andar"],
+        "subs": ["Terraço", "1º Andar", "2º Andar"],
         "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
     },
     "Operacional": {
         "senha": "OPICS",
-        "subdivisoes": [
-            "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
-            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", 
-            "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
-        ],
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
+                 "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", 
+                 "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     }
 }
@@ -37,82 +39,86 @@ AREAS = {
 # --- INTERFACE ---
 st.title("🏛️ Zelador Virtual")
 
-menu = ["Nova Inspeção", "Histórico"]
-escolha_menu = st.sidebar.selectbox("Menu", menu)
+menu = st.sidebar.selectbox("Menu", ["Nova Inspeção", "Histórico de NC"])
 
-if escolha_menu == "Nova Inspeção":
-    st.header("📋 Checklists de Inspeção")
+if menu == "Nova Inspeção":
+    area_sel = st.selectbox("Selecione a Área", [""] + list(areas_config.keys()))
     
-    usuario = st.text_input("Nome do Inspetor:")
-    area_sel = st.selectbox("Selecione a Área:", list(AREAS.keys()))
-    
-    senha_digitada = st.text_input("Senha de Acesso:", type="password")
-    
-    if senha_digitada == AREAS[area_sel]["senha"]:
-        st.success(f"Acesso liberado para {area_sel}")
-        sub_sel = st.selectbox("Subdivisão:", AREAS[area_sel]["subdivisoes"])
-        
-        st.divider()
-        respostas = []
-        
-        for item in AREAS[area_sel]["itens"]:
-            st.subheader(f"Item: {item}")
-            status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"status_{item}")
+    if area_sel:
+        senha = st.text_input("Senha de Acesso", type="password")
+        if senha == areas_config[area_sel]["senha"]:
+            nome_inspetor = st.text_input("Nome do Inspetor")
+            sub_sel = st.selectbox("Subdivisão", areas_config[area_sel]["subs"])
             
-            dados_item = {"item": item, "status": status, "acao": "", "obs": "", "foto": None}
-            
-            if status == "Não Conforme":
-                dados_item["acao"] = st.selectbox("Ação Necessária:", 
-                                                 ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], 
-                                                 key=f"acao_{item}")
-                dados_item["obs"] = st.text_area("Especificação da Não Conformidade (opcional):", key=f"obs_{item}")
-                foto = st.file_uploader(f"Upload de foto para {item}", type=["jpg", "png", "jpeg"], key=f"foto_{item}")
-                if foto:
-                    # Em um app real, salvaríamos a foto em um storage (S3/Cloudinary)
-                    dados_item["foto"] = foto.name 
-            
-            respostas.append(dados_item)
             st.divider()
-
-        if st.button("Finalizar Inspeção"):
-            data_hora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            nao_conformes = [r for r in respostas if r["status"] == "Não Conforme"]
+            st.subheader(f"Checklist: {sub_sel}")
             
-            # Preparar para salvar no histórico
-            registros = []
-            for nc in nao_conformes:
-                registros.append({
-                    "Data": data_hora,
-                    "Inspetor": usuario,
-                    "Area": area_sel,
-                    "Local": sub_sel,
-                    "Item": nc["item"],
-                    "Ação": nc["acao"],
-                    "Detalhes": nc["obs"],
-                    "Foto": nc["foto"]
-                })
-            
-            if registros:
-                salvar_dados(registros)
-                st.warning("Relatório de Não Conformidades Gerado!")
-                st.table(pd.DataFrame(registros))
+            respostas = []
+            for item in areas_config[area_sel]["itens"]:
+                col1, col2 = st.columns([2, 3])
+                with col1:
+                    st.write(f"**{item}**")
+                    status = st.radio(f"Status_{item}", ["Conforme", "Não Conforme"], label_visibility="collapsed", horizontal=True)
                 
-                # Botões de ação (Simulação)
-                st.info("Opcionais de envio:")
-                col1, col2, col3 = st.columns(3)
-                col1.button("Enviar via WhatsApp")
-                col2.button("Enviar por E-mail")
-                col3.button("Gerar PDF")
+                detalhes_nc = {"item": item, "status": status, "motivo": None, "obs": "", "foto": None}
+                
+                if status == "Não Conforme":
+                    with col2:
+                        detalhes_nc["motivo"] = st.selectbox(f"Motivo_{item}", ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"])
+                        detalhes_nc["obs"] = st.text_input(f"Obs_{item}", placeholder="Especifique o problema (opcional)")
+                        detalhes_nc["foto"] = st.file_uploader(f"Foto_{item}", type=['png', 'jpg', 'jpeg'])
+                
+                respostas.append(detalhes_nc)
+                st.divider()
+
+            if st.button("Finalizar e Gerar Relatório"):
+                if not nome_inspetor:
+                    st.error("Por favor, identifique-se antes de finalizar.")
+                else:
+                    conn = sqlite3.connect('zeladoria_v2.db')
+                    c = conn.cursor()
+                    data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    
+                    for r in respostas:
+                        foto_data = r["foto"].read() if r["foto"] else None
+                        c.execute("INSERT INTO inspecoes (data, inspetor, area, sub_area, item, status, motivo, detalhe, foto) VALUES (?,?,?,?,?,?,?,?,?)",
+                                  (data_atual, nome_inspetor, area_sel, sub_sel, r['item'], r['status'], r['motivo'], r['obs'], foto_data))
+                    
+                    conn.commit()
+                    conn.close()
+                    st.success("Relatório salvo com sucesso!")
+                    
+                    # Filtro de NC para exibição imediata
+                    ncs = [r for r in respostas if r["status"] == "Não Conforme"]
+                    if ncs:
+                        st.warning("⚠️ Não Conformidades Encontradas:")
+                        for nc in ncs:
+                            st.write(f"- {nc['item']}: {nc['motivo']} ({nc['obs']})")
+                        
+                        st.info("Para exportar PDF ou enviar por WhatsApp, acesse a aba 'Histórico'.")
+                    else:
+                        st.balloons()
+        elif senha != "":
+            st.error("Senha incorreta.")
+
+elif menu == "Histórico de NC":
+    st.subheader("📋 Histórico de Não Conformidades")
+    conn = sqlite3.connect('zeladoria_v2.db')
+    df = pd.read_sql_query("SELECT id, data, inspetor, area, sub_area, item, motivo, detalhe FROM inspecoes WHERE status = 'Não Conforme'", conn)
+    
+    if not df.empty:
+        st.dataframe(df)
+        
+        id_foto = st.number_input("Digite o ID para ver a foto", min_value=int(df['id'].min()), max_value=int(df['id'].max()))
+        if st.button("Visualizar Foto"):
+            c = conn.cursor()
+            c.execute("SELECT foto FROM inspecoes WHERE id = ?", (id_foto,))
+            img_data = c.fetchone()[0]
+            if img_data:
+                image = Image.open(io.BytesIO(img_data))
+                st.image(image, caption=f"Evidência ID {id_foto}")
             else:
-                st.success("Tudo em conformidade! Nenhuma ação necessária.")
-
-    elif senha_digitada != "":
-        st.error("Senha incorreta.")
-
-elif escolha_menu == "Histórico":
-    st.header("📂 Histórico de Inspeções")
-    if os.path.isfile(DB_FILE):
-        df_hist = pd.read_csv(DB_FILE)
-        st.dataframe(df_hist)
+                st.warning("Sem foto para este registro.")
     else:
-        st.info("Nenhum registro encontrado.")
+        st.write("Nenhuma não conformidade registrada.")
+    conn.close()
