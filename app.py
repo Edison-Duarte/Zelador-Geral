@@ -87,7 +87,7 @@ if menu == "Nova Inspeção":
 
     # 2. Quadro de Periodicidade
     with st.expander("📅 Quadro de Periodicidade"):
-        dados_quadro = [{"Área": a, "Frequência": f"A cada {i['periodicidade_dias']} dias"} for a, i in AREAS.items()]
+        dados_quadro = [{"Área Principal": a, "Frequência": f"A cada {i['periodicidade_dias']} dias", "Subdivisões": ", ".join(i['subs'])} for a, i in AREAS.items()]
         st.table(dados_quadro)
     
     st.divider()
@@ -105,7 +105,7 @@ if menu == "Nova Inspeção":
             
             respostas = []
             for item in AREAS[area_sel]["itens"]:
-                st.markdown(f"### {item}")
+                st.markdown(f"#### {item}")
                 status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"s_{item}", horizontal=True)
                 
                 falha_tipo, detalhe, foto_path = "", "", ""
@@ -116,8 +116,8 @@ if menu == "Nova Inspeção":
                         detalhe = st.text_input(f"Observações:", key=f"o_{item}")
                     
                     with col_nc2:
-                        # MUDANÇA AQUI: camera_input funciona melhor em mobile
-                        foto = st.camera_input(f"Capturar Foto de {item}", key=f"cam_{item}")
+                        # Opção hibrida: funciona para upload no PC e abre câmera/galeria no celular
+                        foto = st.file_uploader(f"Foto ({item})", type=["jpg", "png", "jpeg"], key=f"f_{item}")
                         if foto:
                             foto_path = f"fotos/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{item}.jpg"
                             os.makedirs("fotos", exist_ok=True)
@@ -126,37 +126,54 @@ if menu == "Nova Inspeção":
                 respostas.append({"Item": item, "Status": status, "Tipo_Falha": falha_tipo, "Detalhes": detalhe, "Foto_Path": foto_path})
                 st.divider()
 
-            if st.button("Finalizar e Enviar Relatório"):
+            if st.button("🚀 Finalizar e Enviar Relatório"):
                 if not nome_usuario:
-                    st.error("Digite seu nome!")
+                    st.error("Por favor, preencha o nome do inspetor.")
                 else:
                     ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
                     data_at = datetime.now().strftime("%d/%m/%Y %H:%M")
                     
+                    # Salvar Histórico
                     df_hist = pd.read_csv(HISTORICO_FILE)
                     novo_reg = [[data_at, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
                     pd.concat([df_hist, pd.DataFrame(novo_reg, columns=df_hist.columns)]).to_csv(HISTORICO_FILE, index=False)
 
                     if ncs:
-                        st.warning(f"⚠️ {len(ncs)} Problemas encontrados!")
+                        st.warning(f"⚠️ Encontradas {len(ncs)} não conformidades.")
+                        
+                        # PDF
                         pdf_bytes = gerar_pdf(ncs, area_sel, sub_area, nome_usuario)
-                        st.download_button("📥 Baixar PDF", pdf_bytes, f"Relatorio_{sub_area}.pdf")
+                        st.download_button("📥 1º Baixar PDF do Relatório", pdf_bytes, f"Relatorio_{sub_area}.pdf")
                         
-                        msg = f"Inspeção: {area_sel} ({sub_area})\nInspetor: {nome_usuario}\n\n"
-                        for nc in ncs: msg += f"• {nc['Item']}: {nc['Tipo_Falha']}\n"
+                        # Texto para E-mail e WhatsApp
+                        corpo_msg = f"Relatorio de Inspecao - Zeladoria\nLocal: {area_sel} ({sub_area})\nInspetor: {nome_usuario}\n"
+                        corpo_msg += "-"*25 + "\n\n"
+                        for nc in ncs:
+                            corpo_msg += f"Item: {nc['Item']}\nFalha: {nc['Tipo_Falha']}\nObs: {nc['Detalhes']}\n\n"
                         
-                        st.link_button("💬 Enviar WhatsApp", f"https://api.whatsapp.com/send?text={urllib.parse.quote(msg)}")
+                        # E-mail
+                        assunto = f"Manutencao Urgente: {sub_area}"
+                        link_email = f"mailto:?subject={urllib.parse.quote(assunto)}&body={urllib.parse.quote(corpo_msg)}"
+                        st.link_button("📧 2º Abrir meu E-mail", link_email)
+                        
+                        # WhatsApp
+                        link_zap = f"https://api.whatsapp.com/send?text={urllib.parse.quote(corpo_msg)}"
+                        st.link_button("💬 Enviar via WhatsApp", link_zap)
                     else:
-                        st.success("Tudo OK! Relatório registrado.")
+                        st.success(f"Inspeção finalizada sem falhas por {nome_usuario}.")
 
 elif menu == "Histórico":
-    st.header("📂 Histórico")
+    st.header("📂 Histórico de Falhas")
     if os.path.exists(HISTORICO_FILE):
         df = pd.read_csv(HISTORICO_FILE)
         df_ncs = df[df["Status"] == "Não Conforme"]
         for _, row in df_ncs.iloc[::-1].iterrows():
-            with st.expander(f"{row['Data']} | {row['Item']} ({row['Subdivisao']})"):
-                c1, c2 = st.columns(2)
-                with c1: st.write(f"**Inspetor:** {row['Usuario']}\n\n**Falha:** {row['Tipo_Falha']}\n\n**Obs:** {row['Detalhes']}")
-                with c2: 
-                    if str(row['Foto_Path']) != "nan": st.image(row['Foto_Path'])
+            with st.expander(f"🗓️ {row['Data']} | {row['Item']} ({row['Subdivisao']})"):
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    st.write(f"**Inspetor:** {row['Usuario']}")
+                    st.write(f"**Falha:** {row['Tipo_Falha']}")
+                    st.write(f"**Detalhes:** {row['Detalhes']}")
+                with c2:
+                    if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
+                        st.image(row['Foto_Path'], use_container_width=True)
