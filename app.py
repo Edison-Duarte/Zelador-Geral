@@ -4,11 +4,15 @@ from datetime import datetime
 import os
 import urllib.parse
 from fpdf import FPDF
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+from email.mime.application import MIMEApplication
 
 # --- CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="Zelador Virtual", layout="wide")
 
-# Inicialização do arquivo de histórico
 HISTORICO_FILE = "historico_inspecoes.csv"
 if not os.path.exists(HISTORICO_FILE):
     df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Tipo_Falha", "Detalhes", "Foto_Path"])
@@ -19,11 +23,8 @@ def gerar_pdf(ncs, area, subarea, usuario):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
-    
-    # Cabeçalho
     pdf.cell(0, 10, txt="Relatório de Não Conformidades", ln=True, align='C')
     
-    # Informações Gerais
     pdf.set_font("Helvetica", size=12)
     pdf.ln(10)
     pdf.cell(0, 10, txt=f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
@@ -31,11 +32,9 @@ def gerar_pdf(ncs, area, subarea, usuario):
     pdf.cell(0, 10, txt=f"Inspecionado por: {usuario}", ln=True)
     pdf.ln(10)
     
-    # Título dos Itens
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 10, txt="ITENS COM FALHA:", ln=True)
     
-    # Loop das Não Conformidades
     for item in ncs:
         pdf.ln(5)
         pdf.set_font("Helvetica", "B", 12)
@@ -45,12 +44,60 @@ def gerar_pdf(ncs, area, subarea, usuario):
         pdf.cell(0, 8, txt=f"Observação: {item['Detalhes']}", ln=True)
         pdf.cell(0, 5, txt="-"*50, ln=True)
     
-    # Tratamento para fpdf2 no Streamlit
     try:
         return bytes(pdf.output())
     except TypeError:
-        # Fallback caso ainda esteja usando o fpdf antigo
         return pdf.output(dest='S').encode('latin-1', errors='replace')
+
+# NOVA FUNÇÃO: Enviar e-mail com anexos
+def enviar_email_automatico(ncs, area, subarea, usuario, email_destino, pdf_bytes):
+    # ATENÇÃO: Substitua pelos dados reais da conta que vai disparar o e-mail
+    REMETENTE = "seu_email_sistema@gmail.com"
+    SENHA = "sua_senha_de_app_aqui" 
+    
+    msg = MIMEMultipart()
+    msg['From'] = REMETENTE
+    msg['To'] = email_destino
+    msg['Subject'] = f"🚨 Inspeção Zeladoria - {area} ({subarea})"
+
+    # Montando o texto do e-mail listando as falhas
+    corpo_email = f"Olá,\n\nSegue o relatório de inspeção de zeladoria realizado por {usuario} em {datetime.now().strftime('%d/%m/%Y às %H:%M')}.\n\n"
+    corpo_email += f"📍 **Local:** {area} - {subarea}\n\n"
+    corpo_email += "📋 **NÃO CONFORMIDADES ENCONTRADAS:**\n"
+    
+    for nc in ncs:
+        corpo_email += f"\n🔸 Item: {nc['Item']}\n"
+        corpo_email += f"   - Tipo de Falha: {nc['Tipo_Falha']}\n"
+        corpo_email += f"   - Observação: {nc['Detalhes']}\n"
+    
+    msg.attach(MIMEText(corpo_email, 'plain'))
+
+    # Anexando o PDF
+    anexo_pdf = MIMEApplication(pdf_bytes, _subtype="pdf")
+    anexo_pdf.add_header('Content-Disposition', 'attachment', filename=f"Relatorio_{subarea}.pdf")
+    msg.attach(anexo_pdf)
+
+    # Anexando as fotos
+    for nc in ncs:
+        if nc['Foto_Path'] and os.path.exists(nc['Foto_Path']):
+            with open(nc['Foto_Path'], 'rb') as f:
+                img_data = f.read()
+            # Nomeia a foto com o nome do item para facilitar a identificação
+            nome_foto = f"Foto_{nc['Item']}.jpg"
+            anexo_img = MIMEImage(img_data, name=nome_foto)
+            msg.attach(anexo_img)
+
+    # Conectando ao servidor SMTP do Gmail e enviando
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(REMETENTE, SENHA)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao enviar e-mail: {e}")
+        return False
 
 # --- BANCO DE DADOS DE ÁREAS ---
 AREAS = {
@@ -117,7 +164,6 @@ if menu == "Nova Inspeção":
             if st.button("Finalizar Inspeção"):
                 ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
                 
-                # Salvar no histórico
                 novo_registro = []
                 data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
                 for r in respostas:
@@ -133,10 +179,11 @@ if menu == "Nova Inspeção":
                     st.table(df_relatorio[["Item", "Tipo_Falha", "Detalhes"]])
                     
                     st.write("### 📤 Ações de Envio")
-                    col_pdf, col_zap, col_mail = st.columns(3)
-
-                    # Ação PDF
+                    
+                    # Gera o PDF em background para podermos usá-lo tanto no botão quanto no anexo de e-mail
                     pdf_data = gerar_pdf(ncs, area_selecionada, sub_area, nome_usuario)
+                    
+                    col_pdf, col_zap = st.columns(2)
                     col_pdf.download_button(
                         label="📄 Baixar PDF", 
                         data=pdf_data, 
@@ -144,15 +191,26 @@ if menu == "Nova Inspeção":
                         mime="application/pdf"
                     )
 
-                    # Ação WhatsApp
-                    msg_whatsapp = f"🚨 *Relatório de Zeladoria*\n\nLocal: {area_selecionada} ({sub_area})\nInspecionado por: {nome_usuario}\n\nForam encontradas {len(ncs)} não conformidades."
+                    # Construindo a mensagem detalhada para o WhatsApp também
+                    msg_whatsapp = f"🚨 *Relatório de Zeladoria*\n\nLocal: {area_selecionada} ({sub_area})\nInspecionado por: {nome_usuario}\n\n*Falhas Encontradas:*\n"
+                    for nc in ncs:
+                        msg_whatsapp += f"- {nc['Item']}: {nc['Tipo_Falha']} ({nc['Detalhes']})\n"
+                    
                     link_whatsapp = f"https://api.whatsapp.com/send?text={urllib.parse.quote(msg_whatsapp)}"
-                    col_zap.link_button("💬 Enviar WhatsApp", link_whatsapp)
+                    col_zap.link_button("💬 Enviar Resumo no WhatsApp", link_whatsapp)
 
-                    # Ação E-mail
-                    assunto = f"Inspeção Zeladoria - {sub_area}"
-                    link_email = f"mailto:?subject={urllib.parse.quote(assunto)}&body={urllib.parse.quote(msg_whatsapp)}"
-                    col_mail.link_button("📧 Enviar por E-mail", link_email)
+                    st.divider()
+                    st.write("📧 **Enviar Relatório Completo por E-mail (com fotos e PDF)**")
+                    email_destinatario = st.text_input("E-mail do Gestor/Manutenção:")
+                    if st.button("Enviar E-mail"):
+                        if email_destinatario:
+                            with st.spinner('Enviando e-mail com anexos...'):
+                                sucesso = enviar_email_automatico(ncs, area_selecionada, sub_area, nome_usuario, email_destinatario, pdf_data)
+                                if sucesso:
+                                    st.success(f"E-mail enviado com sucesso para {email_destinatario}!")
+                        else:
+                            st.error("Por favor, digite um endereço de e-mail válido.")
+
                 else:
                     st.success("Tudo em conformidade! Nenhuma ação necessária.")
 
