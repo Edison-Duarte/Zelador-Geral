@@ -1,128 +1,124 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
-from fpdf import FPDF
-import json
+from datetime import datetime
 import os
 
-# --- CONFIGURAÇÕES E BANCO DE DADOS SIMPLIFICADO ---
-DB_FILE = "historico_inspecoes.json"
+# --- CONFIGURAÇÕES INICIAIS ---
+st.set_page_config(page_title="Zelador Virtual", layout="wide")
 
-def carregar_historico():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
-    return []
+# Inicialização do arquivo de histórico
+HISTORICO_FILE = "historico_inspecoes.csv"
+if not os.path.exists(HISTORICO_FILE):
+    df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Tipo_Falha", "Detalhes", "Foto_Path"])
+    df_init.to_csv(HISTORICO_FILE, index=False)
 
-def salvar_inspecao(dados):
-    historico = carregar_historico()
-    historico.append(dados)
-    with open(DB_FILE, "w") as f:
-        json.dump(historico, f, indent=4)
-
-# --- LÓGICA DE PERIODICIDADE ---
-# Definindo periodicidade (em dias)
-PERIODICIDADE = {
-    "Sede Social": 7,  # Semanal
-    "Operacional": 3   # A cada 3 dias (maior desgaste)
+# --- BANCO DE DADOS DE ÁREAS ---
+AREAS = {
+    "Sede Social": {
+        "senha": "SSICS",
+        "subs": ["Terraço", "1º Andar", "2º Andar"],
+        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
+    },
+    "Operacional": {
+        "senha": "OPICS",
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
+        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
+    }
 }
 
-def verificar_pendencias():
-    historico = carregar_historico()
-    status = {}
-    for area in PERIODICIDADE.keys():
-        ultimas = [i for i in historico if i['area'] == area]
-        if not ultimas:
-            status[area] = "⚠️ Nunca inspecionado"
-        else:
-            ultima_data = datetime.strptime(ultimas[-1]['data'], "%Y-%m-%d %H:%M:%S")
-            if datetime.now() > ultima_data + timedelta(days=PERIODICIDADE[area]):
-                status[area] = f"🔴 Atrasado (Última: {ultima_data.strftime('%d/%m')})"
-            else:
-                status[area] = "🟢 Em dia"
-    return status
-
 # --- INTERFACE ---
-st.set_page_config(page_title="Zelador Virtual IC", layout="wide")
 st.title("🏛️ Zelador Virtual")
 
-menu = st.sidebar.selectbox("Menu", ["Nova Inspeção", "Histórico", "Pendências"])
+menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
-if menu == "Pendências":
-    st.subheader("Status de Periodicidade")
-    for area, st_msg in verificar_pendencias().items():
-        st.write(f"**{area}**: {st_msg}")
-
-elif menu == "Nova Inspeção":
-    # 1. Identificação
-    col1, col2 = st.columns(2)
-    usuario = col1.text_input("Nome do Inspetor")
-    area_sel = col2.selectbox("Área", ["Sede Social", "Operacional"])
+if menu == "Nova Inspeção":
+    st.header("📋 Check-list de Inspeção")
     
-    # 2. Senha
-    senha = st.text_input("Senha da Área", type="password")
-    senhas_validas = {"Sede Social": "SSICS", "Operacional": "OPICS"}
-    
-    if senha == senhas_validas[area_sel]:
-        st.success("Acesso Liberado")
-        
-        # 3. Subdivisões e Itens
-        if area_sel == "Sede Social":
-            subs = ["Terraço", "1º Andar", "2º Andar"]
-            itens = ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
-        else:
-            subs = ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv"] # ... adicione os outros
-            itens = ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
-        
-        sub_sel = st.selectbox("Subdivisão", subs)
-        
-        # 4. Checklist
-        st.divider()
-        respostas = []
-        for item in itens:
-            st.write(f"### {item}")
-            col_a, col_b, col_c = st.columns([2, 3, 3])
-            
-            status = col_a.radio(f"Status {item}", ["Conforme", "Não Conforme"], key=f"rad_{item}")
-            
-            obs = ""
-            acao = ""
-            foto = None
-            
-            if status == "Não Conforme":
-                acao = col_b.selectbox("Ação Necessária", ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], key=f"sel_{item}")
-                obs = col_c.text_area("Detalhes (Opcional)", key=f"txt_{item}")
-                foto = st.file_uploader(f"Foto da irregularidade ({item})", type=['jpg', 'png'], key=f"foto_{item}")
-            
-            respostas.append({"item": item, "status": status, "acao": acao, "obs": obs})
+    # Identificação
+    nome_usuario = st.text_input("Seu nome:")
+    area_selecionada = st.selectbox("Selecione a Área:", ["Selecione..."] + list(AREAS.keys()))
 
-        if st.button("Finalizar Inspeção"):
-            dados_finais = {
-                "inspetor": usuario,
-                "data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "area": area_sel,
-                "subdivisao": sub_sel,
-                "check": [r for r in respostas if r['status'] == "Não Conforme"]
-            }
-            salvar_inspecao(dados_finais)
-            st.balloons()
-            st.success("Relatório de Não Conformidades gerado com sucesso!")
+    if area_selecionada != "Selecione...":
+        senha_input = st.text_input("Senha da Área:", type="password")
+        
+        if senha_input == AREAS[area_selecionada]["senha"]:
+            st.success("Acesso Liberado!")
+            sub_area = st.selectbox(f"Subdivisão de {area_selecionada}:", AREAS[area_selecionada]["subs"])
             
-            # Exibir resumo das Não Conformidades
-            if dados_finais["check"]:
-                st.table(pd.DataFrame(dados_finais["check"]))
-                # Aqui entraria a lógica de PDF e compartilhamento
-            else:
-                st.info("Tudo em conformidade! Nenhuma ação necessária.")
+            st.divider()
+            st.subheader(f"Inspecionando: {sub_area}")
+            
+            respostas = []
+            
+            for item in AREAS[area_selecionada]["itens"]:
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    status = st.radio(f"**{item}**", ["Conforme", "Não Conforme"], key=item)
+                
+                falha_tipo = ""
+                detalhe = ""
+                foto_nome = ""
+                
+                if status == "Não Conforme":
+                    with col2:
+                        falha_tipo = st.selectbox(f"Tipo de falha ({item})", ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], key=f"tipo_{item}")
+                        detalhe = st.text_input(f"Observações ({item})", key=f"obs_{item}")
+                        foto = st.file_uploader(f"Foto da Não Conformidade ({item})", type=["jpg", "png", "jpeg"], key=f"foto_{item}")
+                        if foto:
+                            # Salva a foto localmente
+                            foto_nome = f"fotos/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{item}.jpg"
+                            os.makedirs("fotos", exist_ok=True)
+                            with open(foto_nome, "wb") as f:
+                                f.write(foto.getbuffer())
+                
+                respostas.append({
+                    "Item": item, "Status": status, "Tipo_Falha": falha_tipo, 
+                    "Detalhes": detalhe, "Foto_Path": foto_nome
+                })
+
+            if st.button("Finalizar Inspeção"):
+                # Filtrar apenas não conformidades para o relatório
+                ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
+                
+                # Salvar no histórico (CSV)
+                novo_registro = []
+                for r in respostas:
+                    novo_registro.append([datetime.now().strftime("%d/%m/%Y %H:%M"), nome_usuario, area_selecionada, sub_area, r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]])
+                
+                df_hist = pd.read_csv(HISTORICO_FILE)
+                df_novo = pd.DataFrame(novo_registro, columns=df_hist.columns)
+                pd.concat([df_hist, df_novo]).to_csv(HISTORICO_FILE, index=False)
+
+                st.warning("⚠️ Relatório de Não Conformidades Gerado!")
+                if ncs:
+                    df_relatorio = pd.DataFrame(ncs)
+                    st.table(df_relatorio[["Item", "Tipo_Falha", "Detalhes"]])
+                    
+                    # Simulação de botões de exportação
+                    st.write("---")
+                    st.button("📧 Enviar por E-mail")
+                    st.button("💬 Enviar via WhatsApp")
+                    st.button("📄 Gerar PDF")
+                else:
+                    st.success("Tudo em conformidade! Nenhuma ação necessária.")
+
+        elif senha_input != "":
+            st.error("Senha incorreta!")
 
 elif menu == "Histórico":
-    st.subheader("📜 Histórico de Inspeções")
-    hist = carregar_historico()
-    if hist:
-        df_hist = pd.DataFrame(hist)
-        st.dataframe(df_hist[["data", "area", "subdivisao", "inspetor"]])
-        
-        idx = st.number_input("Ver detalhes do índice:", min_value=0, max_value=len(hist)-1, step=1)
-        st.json(hist[idx])
+    st.header("📂 Histórico de Inspeções")
+    df_hist = pd.read_csv(HISTORICO_FILE)
+    
+    # Mostrar apenas Não Conformidades no histórico para facilitar a gestão
+    df_ncs = df_hist[df_hist["Status"] == "Não Conforme"]
+    
+    if not df_ncs.empty:
+        for idx, row in df_ncs.iterrows():
+            with st.expander(f"{row['Data']} - {row['Area']} ({row['Subdivisao']}) - {row['Item']}"):
+                st.write(f"**Usuário:** {row['Usuario']}")
+                st.write(f"**Tipo:** {row['Tipo_Falha']}")
+                st.write(f"**Detalhes:** {row['Detalhes']}")
+                if str(row['Foto_Path']) != "nan" and row['Foto_Path'] != "":
+                    st.image(row['Foto_Path'], width=300)
     else:
-        st.write("Nenhum registro encontrado.")
+        st.info("Nenhuma não conformidade registrada até o momento.")
