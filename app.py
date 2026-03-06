@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
-from fpdf import FPDF
 import urllib.parse
+from fpdf import FPDF
 
 # --- CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="Zelador Virtual", layout="wide")
@@ -18,27 +18,39 @@ if not os.path.exists(HISTORICO_FILE):
 def gerar_pdf(ncs, area, subarea, usuario):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, txt="Relatorio de Nao Conformidades", ln=True, align='C')
+    pdf.set_font("Helvetica", "B", 16)
     
-    pdf.set_font("Arial", size=12)
-    pdf.ln(10)
-    pdf.cell(200, 10, txt=f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
-    pdf.cell(200, 10, txt=f"Area: {area} - {subarea}", ln=True)
-    pdf.cell(200, 10, txt=f"Inspecionado por: {usuario}", ln=True)
-    pdf.ln(10)
-    pdf.cell(200, 10, txt="ITENS COM FALHA:", ln=True)
+    # Cabeçalho
+    pdf.cell(0, 10, txt="Relatório de Não Conformidades", ln=True, align='C')
     
+    # Informações Gerais
+    pdf.set_font("Helvetica", size=12)
+    pdf.ln(10)
+    pdf.cell(0, 10, txt=f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
+    pdf.cell(0, 10, txt=f"Área: {area} - {subarea}", ln=True)
+    pdf.cell(0, 10, txt=f"Inspecionado por: {usuario}", ln=True)
+    pdf.ln(10)
+    
+    # Título dos Itens
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 10, txt="ITENS COM FALHA:", ln=True)
+    
+    # Loop das Não Conformidades
     for item in ncs:
         pdf.ln(5)
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(200, 10, txt=f"Item: {item['Item']}", ln=True)
-        pdf.set_font("Arial", size=11)
-        pdf.cell(200, 8, txt=f"Tipo: {item['Tipo_Falha']}", ln=True)
-        pdf.cell(200, 8, txt=f"Observacao: {item['Detalhes']}", ln=True)
-        pdf.cell(200, 5, txt="-"*50, ln=True)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 10, txt=f"Item: {item['Item']}", ln=True)
+        pdf.set_font("Helvetica", size=11)
+        pdf.cell(0, 8, txt=f"Tipo: {item['Tipo_Falha']}", ln=True)
+        pdf.cell(0, 8, txt=f"Observação: {item['Detalhes']}", ln=True)
+        pdf.cell(0, 5, txt="-"*50, ln=True)
     
-    return pdf.output(dest='S').encode('latin-1')
+    # Tratamento para fpdf2 no Streamlit
+    try:
+        return bytes(pdf.output())
+    except TypeError:
+        # Fallback caso ainda esteja usando o fpdf antigo
+        return pdf.output(dest='S').encode('latin-1', errors='replace')
 
 # --- BANCO DE DADOS DE ÁREAS ---
 AREAS = {
@@ -125,7 +137,12 @@ if menu == "Nova Inspeção":
 
                     # Ação PDF
                     pdf_data = gerar_pdf(ncs, area_selecionada, sub_area, nome_usuario)
-                    col_pdf.download_button("📄 Baixar PDF", pdf_data, f"Relatorio_{sub_area}.pdf", "application/pdf")
+                    col_pdf.download_button(
+                        label="📄 Baixar PDF", 
+                        data=pdf_data, 
+                        file_name=f"Relatorio_{sub_area}_{datetime.now().strftime('%Y%m%d')}.pdf", 
+                        mime="application/pdf"
+                    )
 
                     # Ação WhatsApp
                     msg_whatsapp = f"🚨 *Relatório de Zeladoria*\n\nLocal: {area_selecionada} ({sub_area})\nInspecionado por: {nome_usuario}\n\nForam encontradas {len(ncs)} não conformidades."
@@ -133,7 +150,7 @@ if menu == "Nova Inspeção":
                     col_zap.link_button("💬 Enviar WhatsApp", link_whatsapp)
 
                     # Ação E-mail
-                    assunto = f"Inspecao Zeladoria - {sub_area}"
+                    assunto = f"Inspeção Zeladoria - {sub_area}"
                     link_email = f"mailto:?subject={urllib.parse.quote(assunto)}&body={urllib.parse.quote(msg_whatsapp)}"
                     col_mail.link_button("📧 Enviar por E-mail", link_email)
                 else:
