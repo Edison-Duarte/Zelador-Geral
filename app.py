@@ -27,11 +27,35 @@ AREAS = {
         "senha": "OPICS",
         "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
-        "periodicidade_dias": 7  # Periodicidade de 7 dias para hangares
+        "periodicidade_dias": 7 
     }
 }
 
 # --- FUNÇÕES ---
+
+def verificar_pendencias():
+    if not os.path.exists(HISTORICO_FILE): return []
+    try:
+        df = pd.read_csv(HISTORICO_FILE)
+        if df.empty: return []
+        
+        df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
+        pendencias = []
+        hoje = datetime.now()
+
+        for area, info in AREAS.items():
+            prazo = info['periodicidade_dias']
+            for sub in info['subs']:
+                ultima = df[(df['Area'] == area) & (df['Subdivisao'] == sub)]
+                
+                # SÓ EXIBE AVISO SE JÁ EXISTIR UMA PRIMEIRA INSPEÇÃO (conforme solicitado)
+                if not ultima.empty:
+                    data_ultima = ultima['Data_dt'].max()
+                    dias_passados = (hoje - data_ultima).days
+                    if dias_passados >= prazo:
+                        pendencias.append(f"🔴 **{area} - {sub}** (Última há {dias_passados} dias)")
+        return pendencias
+    except: return []
 
 def gerar_pdf(ncs, area, subarea, usuario):
     pdf = FPDF()
@@ -46,41 +70,13 @@ def gerar_pdf(ncs, area, subarea, usuario):
     pdf.ln(10)
     
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 10, txt="ITENS PONTUADOS:", ln=True)
-    pdf.ln(5)
-
     for item in ncs:
-        pdf.set_font("Helvetica", "B", 12)
         pdf.cell(0, 10, txt=f"Item: {item['Item']}", ln=True)
         pdf.set_font("Helvetica", size=11)
         pdf.cell(0, 8, txt=f"Tipo de Falha: {item['Tipo_Falha']}", ln=True)
         pdf.cell(0, 8, txt=f"Observacoes: {item['Detalhes']}", ln=True)
-        pdf.cell(0, 5, txt="-"*50, ln=True)
-        pdf.ln(2)
-    
+        pdf.ln(5)
     return bytes(pdf.output())
-
-def verificar_pendencias():
-    if not os.path.exists(HISTORICO_FILE): return []
-    try:
-        df = pd.read_csv(HISTORICO_FILE)
-        if df.empty: return []
-        df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
-        pendencias = []
-        hoje = datetime.now()
-
-        for area, info in AREAS.items():
-            prazo = info['periodicidade_dias']
-            for sub in info['subs']:
-                ultima = df[(df['Area'] == area) & (df['Subdivisao'] == sub)]
-                if ultima.empty:
-                    pendencias.append(f"{area} - {sub} (Nunca inspecionado)")
-                else:
-                    dias = (hoje - ultima['Data_dt'].max()).days
-                    if dias >= prazo:
-                        pendencias.append(f"{area} - {sub} (Vencido há {dias} dias)")
-        return pendencias
-    except: return []
 
 # --- INTERFACE ---
 st.title("🏛️ Zelador Virtual")
@@ -89,14 +85,29 @@ menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 if menu == "Nova Inspeção":
     st.header("📋 Check-list de Inspeção")
     
-    # --- AVISO DE PERIODICIDADE ---
+    # --- 1. AVISO DE ÁREAS VENCIDAS ---
     pendentes = verificar_pendencias()
     if pendentes:
-        st.warning("⚠️ **Hoje devem ser inspecionadas as áreas:**")
+        st.warning("### ⚠️ Hoje devem ser inspecionadas as áreas:")
         for p in pendentes:
-            st.write(f"• {p}")
-        st.divider()
+            st.write(p)
+    else:
+        st.success("✅ Nenhuma inspeção agendada para hoje (todas as áreas em dia).")
 
+    # --- 2. QUADRO DE PERIODICIDADE ---
+    with st.expander("📅 Quadro de Periodicidade (Regras de Inspeção)"):
+        dados_quadro = []
+        for area, info in AREAS.items():
+            dados_quadro.append({
+                "Área Principal": area,
+                "Periodicidade": f"A cada {info['periodicidade_dias']} dias",
+                "Subáreas incluídas": ", ".join(info['subs'])
+            })
+        st.table(dados_quadro)
+    
+    st.divider()
+
+    # --- 3. FORMULÁRIO DE INSPEÇÃO ---
     nome_usuario = st.text_input("Seu nome (Inspetor):")
     area_selecionada = st.selectbox("Selecione a Área Principal:", ["Selecione..."] + list(AREAS.keys()))
 
@@ -133,6 +144,7 @@ if menu == "Nova Inspeção":
                 else:
                     ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
                     data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    
                     novo_registro = [[data_atual, nome_usuario, area_selecionada, sub_area, r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
                     df_hist = pd.read_csv(HISTORICO_FILE)
                     pd.concat([df_hist, pd.DataFrame(novo_registro, columns=df_hist.columns)]).to_csv(HISTORICO_FILE, index=False)
@@ -141,7 +153,7 @@ if menu == "Nova Inspeção":
                         st.warning(f"⚠️ {len(ncs)} Não Conformidades encontradas!")
                         pdf_bytes = gerar_pdf(ncs, area_selecionada, sub_area, nome_usuario)
                         st.download_button("📥 1º Baixar PDF do Relatório", pdf_bytes, f"Relatorio_{sub_area}.pdf", "application/pdf")
-
+                        
                         corpo_msg = f"Relatório de Inspeção\nLocal: {area_selecionada} ({sub_area})\nInspetor: {nome_usuario}\n\n"
                         for nc in ncs:
                             corpo_msg += f"• {nc['Item']}: {nc['Tipo_Falha']}\n  Obs: {nc['Detalhes']}\n\n"
