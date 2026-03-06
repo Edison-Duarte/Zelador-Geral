@@ -1,15 +1,15 @@
 import streamlit as st
-from fpdf import FPDF
-import datetime
+import pandas as pd
+from datetime import datetime
 
-# Configuração da página
+# Configuração da Página
 st.set_page_config(page_title="Zelador Virtual ICS", layout="centered")
 
-# Simulação de banco de dados em memória (Histórico)
+# --- BANCO DE DADOS TEMPORÁRIO (Simulação) ---
 if 'historico' not in st.session_state:
     st.session_state['historico'] = []
 
-# --- DADOS DE CONFIGURAÇÃO ---
+# --- DICIONÁRIOS DE CONFIGURAÇÃO ---
 AREAS = {
     "Sede Social": {
         "senha": "SSICS",
@@ -19,9 +19,9 @@ AREAS = {
     "Operacional": {
         "senha": "OPICS",
         "subdivisoes": [
-            "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV",
-            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4",
-            "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
+            "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", 
+            "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", 
+            "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"
         ],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     }
@@ -30,106 +30,94 @@ AREAS = {
 # --- INTERFACE ---
 st.title("🏛️ Zelador Virtual - Inspeção")
 
-menu = st.sidebar.selectbox("Menu", ["Nova Inspeção", "Histórico"])
+aba1, aba2 = st.tabs(["📋 Nova Inspeção", "📜 Histórico"])
 
-if menu == "Nova Inspeção":
-    st.header("Checklist de Manutenção")
-    
-    # 1. Identificação
-    nome_usuario = st.text_input("Nome do Inspetor:")
-    area_sel = st.selectbox("Selecione a Área:", ["Selecione..."] + list(AREAS.keys()))
+with aba1:
+    # 1. Identificação e Área
+    col1, col2 = st.columns(2)
+    with col1:
+        usuario = st.text_input("Identificação do Usuário (Nome)")
+    with col2:
+        area_selecionada = st.selectbox("Selecione a Área", list(AREAS.keys()))
 
-    if area_sel != "Selecione...":
-        # 2. Senha
-        senha_input = st.text_input("Digite a senha da área:", type="password")
+    # 2. Validação de Senha
+    senha_input = st.text_input("Digite a senha da área", type="password")
+
+    if senha_input == AREAS[area_selecionada]["senha"]:
+        st.success(f"Acesso liberado para {area_selecionada}")
         
-        if senha_input == AREAS[area_sel]["senha"]:
-            st.success("Acesso Liberado!")
-            
-            sub_sel = st.selectbox("Subdivisão:", AREAS[area_sel]["subdivisoes"])
-            
-            st.divider()
-            st.subheader(f"Inspecionando: {sub_sel}")
-            
-            # 3. Checklist
-            respostas = {}
-            for item in AREAS[area_sel]["itens"]:
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    status = st.radio(f"**{item}**", ["Conforme", "Não Conforme"], key=item)
-                
-                if status == "Não Conforme":
-                    with col2:
-                        tipo_falha = st.selectbox(f"Ação necessária ({item}):", 
-                                                ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], key=f"tipo_{item}")
-                        obs = st.text_input(f"Observação ({item}):", key=f"obs_{item}")
-                        foto = st.file_uploader(f"Foto da evidência ({item})", type=['png', 'jpg', 'jpeg'], key=f"foto_{item}")
-                        respostas[item] = {"status": status, "acao": tipo_falha, "obs": obs, "foto": foto}
-                else:
-                    respostas[item] = {"status": status}
+        sub_area = st.selectbox("Subdivisão", AREAS[area_selecionada]["subdivisoes"])
+        
+        st.divider()
+        st.subheader(f"Checklist: {sub_area}")
+        
+        relatorio_atual = []
 
-            # 4. Finalização
-            if st.button("Finalizar Inspeção"):
-                nao_conformes = {k: v for k, v in respostas.items() if v["status"] == "Não Conforme"}
+        # 3. Gerando os Itens de Inspeção
+        for item in AREAS[area_selecionada]["itens"]:
+            st.write(f"**Item: {item}**")
+            status = st.radio(f"Status de {item}", ["Conforme", "Não Conforme"], key=f"status_{item}", horizontal=True)
+            
+            detalhes_nc = {}
+            if status == "Não Conforme":
+                col_cat, col_obs = st.columns(2)
+                with col_cat:
+                    acao = st.selectbox("Ação Necessária", ["Limpeza Imediata", "Pintura", "Reparo", "Troca de componentes"], key=f"acao_{item}")
+                with col_obs:
+                    obs = st.text_input("Observação (Opcional)", key=f"obs_{item}")
                 
-                data_atual = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-                relatorio_id = f"REL-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+                foto = st.file_uploader(f"Foto da Não Conformidade ({item})", type=['png', 'jpg', 'jpeg'], key=f"foto_{item}")
                 
-                dados_inspecao = {
-                    "id": relatorio_id,
-                    "data": data_atual,
-                    "inspetor": nome_usuario,
-                    "local": f"{area_sel} - {sub_sel}",
-                    "falhas": nao_conformes
+                detalhes_nc = {
+                    "Item": item,
+                    "Status": status,
+                    "Ação": acao,
+                    "Observação": obs,
+                    "Foto": foto.name if foto else "Sem foto"
                 }
-                
-                st.session_state['historico'].append(dados_inspecao)
+                relatorio_atual.append(detalhes_nc)
+            st.divider()
+
+        # 4. Finalização
+        if st.button("Finalizar Inspeção"):
+            if not usuario:
+                st.error("Por favor, identifique-se antes de finalizar.")
+            else:
+                data_hora = datetime.now().strftime("%d/%m/%Y %H:%M")
+                dados_final = {
+                    "Data": data_hora,
+                    "Usuário": usuario,
+                    "Área": area_selecionada,
+                    "Subdivisão": sub_area,
+                    "Não Conformidades": relatorio_atual
+                }
+                st.session_state['historico'].append(dados_final)
+                st.balloons()
                 st.success("Relatório gerado com sucesso!")
-
-                # --- EXIBIÇÃO DO RELATÓRIO ---
-                st.divider()
-                st.subheader("Relatório de Não Conformidades")
-                if not nao_conformes:
-                    st.info("Tudo em conformidade! Nada a relatar.")
+                
+                if relatorio_atual:
+                    st.warning("⚠️ Foram encontradas não conformidades. Veja o histórico para exportar.")
                 else:
-                    texto_relatorio = f"Inspeção: {area_sel} ({sub_sel})\nInspetor: {nome_usuario}\nData: {data_atual}\n\nProblemas encontrados:\n"
-                    for item, info in nao_conformes.items():
-                        item_texto = f"- {item}: {info['acao']} | Obs: {info['obs']}\n"
-                        st.warning(item_texto)
-                        texto_relatorio += item_texto
+                    st.info("Tudo em ordem! Nenhuma não conformidade registrada.")
 
-                    # Botões de Ação
-                    col_a, col_b = st.columns(2)
-                    
-                    # WhatsApp (Link dinâmico)
-                    msg_whatsapp = texto_relatorio.replace("\n", "%0A")
-                    with col_a:
-                        st.markdown(f"[📲 Enviar via WhatsApp](https://wa.me/?text={msg_whatsapp})")
-                    
-                    # PDF (Simples)
-                    pdf = FPDF()
-                    pdf.add_page()
-                    pdf.set_font("Arial", size=12)
-                    pdf.cell(200, 10, txt="Relatório de Zeladoria", ln=True, align='C')
-                    pdf.multi_cell(0, 10, txt=texto_relatorio)
-                    pdf_output = pdf.output(dest='S').encode('latin-1')
-                    
-                    with col_b:
-                        st.download_button(label="📥 Baixar PDF", data=pdf_output, file_name=f"relatorio_{relatorio_id}.pdf", mime="application/pdf")
+    elif senha_input != "":
+        st.error("Senha incorreta.")
 
-        elif senha_input != "":
-            st.error("Senha incorreta.")
-
-elif menu == "Histórico":
-    st.header("Histórico de Inspeções")
+with aba2:
+    st.subheader("Histórico de Inspeções")
     if not st.session_state['historico']:
         st.write("Nenhuma inspeção realizada ainda.")
     else:
-        for insp in reversed(st.session_state['historico']):
-            with st.expander(f"{insp['data']} - {insp['local']}"):
-                st.write(f"**Inspetor:** {insp['inspetor']}")
-                if insp['falhas']:
-                    for item, info in insp['falhas'].items():
-                        st.write(f"❌ **{item}**: {info['acao']} ({info['obs']})")
+        for idx, insp in enumerate(reversed(st.session_state['historico'])):
+            with st.expander(f"{insp['Data']} - {insp['Área']} ({insp['Subdivisão']})"):
+                st.write(f"**Inspecionado por:** {insp['Usuário']}")
+                if insp['Não Conformidades']:
+                    df_nc = pd.DataFrame(insp['Não Conformidades'])
+                    st.table(df_nc)
+                    
+                    # Simulação de Botões de Exportação
+                    st.write("---")
+                    st.button(f"Gerar PDF ({idx})", help="Função para gerar PDF")
+                    st.write(f"[Enviar via WhatsApp](https://wa.me/?text=Relatório%20de%20Inspeção%20{insp['Subdivisão']})")
                 else:
-                    st.write("✅ Sem não conformidades.")
+                    st.write("Nenhuma não conformidade registrada.")
