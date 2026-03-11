@@ -11,7 +11,7 @@ st.set_page_config(page_title="Zelador Virtual", layout="wide", page_icon="🏛�
 HISTORICO_FILE = "historico_inspecoes.csv"
 
 if not os.path.exists(HISTORICO_FILE):
-    df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Tipo_Falha", "Detalhes", "Foto_Path"])
+    df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Acao", "Detalhes", "Foto_Path"])
     df_init.to_csv(HISTORICO_FILE, index=False)
 
 # --- BANCO DE DADOS DE ÁREAS ---
@@ -66,7 +66,7 @@ def gerar_pdf(ncs, area, subarea, usuario):
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(0, 10, txt=f"Item: {item['Item']}", ln=True)
         pdf.set_font("Helvetica", size=11)
-        pdf.cell(0, 8, txt=f"Falha: {item['Tipo_Falha']}", ln=True)
+        pdf.cell(0, 8, txt=f"Ação Necessária: {item['Acao']}", ln=True)
         obs_limpa = str(item['Detalhes']).encode('latin-1', 'ignore').decode('latin-1')
         pdf.cell(0, 8, txt=f"Obs: {obs_limpa}", ln=True)
         pdf.ln(5)
@@ -109,11 +109,11 @@ if menu == "Nova Inspeção":
                 st.markdown(f"#### {item}")
                 status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"s_{item}", horizontal=True)
                 
-                falha_tipo, detalhe, foto_path = "", "", ""
+                acao, detalhe, foto_path = "", "", ""
                 if status == "Não Conforme":
                     col_nc1, col_nc2 = st.columns([1, 1])
                     with col_nc1:
-                        falha_tipo = st.selectbox(f"Tipo de falha:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"t_{item}")
+                        acao = st.selectbox(f"Ação necessária:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"a_{item}")
                         detalhe = st.text_input(f"Observações:", key=f"o_{item}")
                     with col_nc2:
                         foto = st.file_uploader(f"Foto/Câmera ({item})", type=["jpg", "png", "jpeg"], key=f"f_{item}")
@@ -122,7 +122,7 @@ if menu == "Nova Inspeção":
                             os.makedirs("fotos", exist_ok=True)
                             with open(foto_path, "wb") as f: f.write(foto.getbuffer())
                 
-                respostas.append({"Item": item, "Status": status, "Tipo_Falha": falha_tipo, "Detalhes": detalhe, "Foto_Path": foto_path})
+                respostas.append({"Item": item, "Status": status, "Acao": acao, "Detalhes": detalhe, "Foto_Path": foto_path})
                 st.divider()
 
             if st.button("🚀 Finalizar e Enviar Relatório"):
@@ -132,7 +132,7 @@ if menu == "Nova Inspeção":
                     ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
                     data_at = datetime.now().strftime("%d/%m/%Y %H:%M")
                     df_hist = pd.read_csv(HISTORICO_FILE)
-                    novo_reg = [[data_at, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
+                    novo_reg = [[data_at, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Acao"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
                     pd.concat([df_hist, pd.DataFrame(novo_reg, columns=df_hist.columns)]).to_csv(HISTORICO_FILE, index=False)
 
                     if ncs:
@@ -143,7 +143,7 @@ if menu == "Nova Inspeção":
                         corpo_msg = f"Relatorio de Inspecao\nLocal: {area_sel} ({sub_area})\nInspetor: {nome_usuario}\n"
                         corpo_msg += "-"*25 + "\n\n"
                         for nc in ncs:
-                            corpo_msg += f"Item: {nc['Item']}\nFalha: {nc['Tipo_Falha']}\nObs: {nc['Detalhes']}\n\n"
+                            corpo_msg += f"Item: {nc['Item']}\nAção: {nc['Acao']}\nObs: {nc['Detalhes']}\n\n"
                         
                         link_email = f"mailto:?subject=Manutencao%20{sub_area}&body={urllib.parse.quote(corpo_msg)}"
                         st.link_button("📧 2º Abrir meu E-mail", link_email)
@@ -157,8 +157,6 @@ elif menu == "Histórico":
     
     if os.path.exists(HISTORICO_FILE):
         df = pd.read_csv(HISTORICO_FILE)
-        
-        # --- 1. NOVO FILTRO DE ÁREA ---
         filtro_area = st.selectbox("🔍 Filtrar Histórico por Área:", ["Mostrar Tudo", "Sede Social", "Operacional"])
         
         df_display = df[df["Status"] == "Não Conforme"].copy()
@@ -167,9 +165,6 @@ elif menu == "Histórico":
             df_display = df_display[df_display["Area"] == filtro_area]
 
         if not df_display.empty:
-            st.info(f"Mostrando {len(df_display)} ocorrências de '{filtro_area}'")
-            
-            # Iteramos do mais recente para o mais antigo
             for idx, row in df_display.iloc[::-1].iterrows():
                 with st.expander(f"🗓️ {row['Data']} | {row['Item']} ({row['Subdivisao']})"):
                     col_info, col_img = st.columns([2, 1])
@@ -177,21 +172,18 @@ elif menu == "Histórico":
                     with col_info:
                         st.write(f"**Área Principal:** {row['Area']}")
                         st.write(f"**Inspetor:** {row['Usuario']}")
-                        st.write(f"**Falha:** {row['Tipo_Falha']}")
+                        st.write(f"**Ação Definida:** {row['Acao']}")
                         st.write(f"**Detalhes:** {row['Detalhes']}")
                         
                         st.divider()
                         
-                        # --- 2. SEÇÃO DE EXCLUSÃO (MAIS VISÍVEL) ---
                         with st.container():
                             st.error("⚠️ **Zona de Exclusão**")
                             senha_excluir = st.text_input(f"Senha de {row['Area']} para apagar:", type="password", key=f"del_pwd_{idx}")
                             
                             if st.button(f"Confirmar Exclusão de {row['Item']}", key=f"btn_del_{idx}"):
                                 senha_correta = AREAS[row['Area']]["senha"]
-                                
                                 if senha_excluir == senha_correta:
-                                    # Recarrega o CSV completo para garantir que apaguemos a linha certa
                                     df_full = pd.read_csv(HISTORICO_FILE)
                                     df_full = df_full.drop(idx)
                                     df_full.to_csv(HISTORICO_FILE, index=False)
@@ -202,6 +194,6 @@ elif menu == "Histórico":
                                 
                     with col_img:
                         if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
-                            st.image(row['Foto_Path'], caption="Foto da ocorrência", use_container_width=True)
+                            st.image(row['Foto_Path'], use_container_width=True)
         else:
-            st.info("Nenhum registro encontrado para este filtro.")
+            st.info("Nenhum registro encontrado.")
