@@ -10,7 +10,17 @@ st.set_page_config(page_title="Zelador Virtual", layout="wide", page_icon="🏛�
 
 HISTORICO_FILE = "historico_inspecoes.csv"
 
-if not os.path.exists(HISTORICO_FILE):
+# --- LÓGICA DE CORREÇÃO DO ARQUIVO CSV ---
+if os.path.exists(HISTORICO_FILE):
+    try:
+        df_fix = pd.read_csv(HISTORICO_FILE)
+        # Se ainda existir a coluna antiga, renomeia para a nova
+        if "Tipo_Falha" in df_fix.columns:
+            df_fix = df_fix.rename(columns={"Tipo_Falha": "Acao"})
+            df_fix.to_csv(HISTORICO_FILE, index=False)
+    except:
+        pass
+else:
     df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Acao", "Detalhes", "Foto_Path"])
     df_init.to_csv(HISTORICO_FILE, index=False)
 
@@ -109,11 +119,11 @@ if menu == "Nova Inspeção":
                 st.markdown(f"#### {item}")
                 status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"s_{item}", horizontal=True)
                 
-                acao, detalhe, foto_path = "", "", ""
+                acao_val, detalhe, foto_path = "", "", ""
                 if status == "Não Conforme":
                     col_nc1, col_nc2 = st.columns([1, 1])
                     with col_nc1:
-                        acao = st.selectbox(f"Ação necessária:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"a_{item}")
+                        acao_val = st.selectbox(f"Ação necessária:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"a_{item}")
                         detalhe = st.text_input(f"Observações:", key=f"o_{item}")
                     with col_nc2:
                         foto = st.file_uploader(f"Foto/Câmera ({item})", type=["jpg", "png", "jpeg"], key=f"f_{item}")
@@ -122,7 +132,7 @@ if menu == "Nova Inspeção":
                             os.makedirs("fotos", exist_ok=True)
                             with open(foto_path, "wb") as f: f.write(foto.getbuffer())
                 
-                respostas.append({"Item": item, "Status": status, "Acao": acao, "Detalhes": detalhe, "Foto_Path": foto_path})
+                respostas.append({"Item": item, "Status": status, "Acao": acao_val, "Detalhes": detalhe, "Foto_Path": foto_path})
                 st.divider()
 
             if st.button("🚀 Finalizar e Enviar Relatório"):
@@ -159,8 +169,8 @@ elif menu == "Histórico":
         df = pd.read_csv(HISTORICO_FILE)
         filtro_area = st.selectbox("🔍 Filtrar Histórico por Área:", ["Mostrar Tudo", "Sede Social", "Operacional"])
         
+        # Filtra apenas não conformes e aplica o filtro de área
         df_display = df[df["Status"] == "Não Conforme"].copy()
-        
         if filtro_area != "Mostrar Tudo":
             df_display = df_display[df_display["Area"] == filtro_area]
 
@@ -172,7 +182,8 @@ elif menu == "Histórico":
                     with col_info:
                         st.write(f"**Área Principal:** {row['Area']}")
                         st.write(f"**Inspetor:** {row['Usuario']}")
-                        st.write(f"**Ação Definida:** {row['Acao']}")
+                        # Aqui usamos o get para evitar erro caso a coluna ainda esteja sendo processada
+                        st.write(f"**Ação Definida:** {row.get('Acao', 'Não definida')}")
                         st.write(f"**Detalhes:** {row['Detalhes']}")
                         
                         st.divider()
