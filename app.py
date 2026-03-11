@@ -12,7 +12,7 @@ HISTORICO_FILE = "historico_inspecoes.csv"
 
 # Garante que o arquivo de histórico exista
 if not os.path.exists(HISTORICO_FILE):
-    df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Tipo_Falha", "Detalhes", "Foto_Path"])
+    df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Ação", "Detalhes", "Foto_Path"])
     df_init.to_csv(HISTORICO_FILE, index=False)
 
 # --- BANCO DE DADOS DE ÁREAS ---
@@ -179,3 +179,4 @@ elif menu == "Histórico":
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhuma falha registrada no histórico.")
+
