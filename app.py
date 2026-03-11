@@ -10,7 +10,6 @@ st.set_page_config(page_title="Zelador Virtual", layout="wide", page_icon="🏛�
 
 HISTORICO_FILE = "historico_inspecoes.csv"
 
-# Garante que o arquivo de histórico exista
 if not os.path.exists(HISTORICO_FILE):
     df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Tipo_Falha", "Detalhes", "Foto_Path"])
     df_init.to_csv(HISTORICO_FILE, index=False)
@@ -63,19 +62,16 @@ def gerar_pdf(ncs, area, subarea, usuario):
     pdf.cell(0, 10, txt=f"Local: {area} - {subarea}", ln=True)
     pdf.cell(0, 10, txt=f"Inspetor: {usuario}", ln=True)
     pdf.ln(10)
-    
     for item in ncs:
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(0, 10, txt=f"Item: {item['Item']}", ln=True)
         pdf.set_font("Helvetica", size=11)
         pdf.cell(0, 8, txt=f"Falha: {item['Tipo_Falha']}", ln=True)
-        obs_limpa = item['Detalhes'].encode('latin-1', 'ignore').decode('latin-1')
+        obs_limpa = str(item['Detalhes']).encode('latin-1', 'ignore').decode('latin-1')
         pdf.cell(0, 8, txt=f"Obs: {obs_limpa}", ln=True)
         pdf.ln(5)
-    
     pdf_output = pdf.output(dest='S')
-    if isinstance(pdf_output, str):
-        return pdf_output.encode('latin-1')
+    if isinstance(pdf_output, str): return pdf_output.encode('latin-1')
     return pdf_output
 
 # --- INTERFACE ---
@@ -99,7 +95,7 @@ if menu == "Nova Inspeção":
     st.divider()
 
     nome_usuario = st.text_input("Nome do Inspetor:")
-    area_sel = st.selectbox("Área Principal:", ["Selecione..."] + list(AREAS.keys()))
+    area_sel = st.selectbox("Selecione a Área Principal:", ["Selecione..."] + list(AREAS.keys()))
 
     if area_sel != "Selecione...":
         senha_in = st.text_input("Senha da Área:", type="password")
@@ -119,7 +115,6 @@ if menu == "Nova Inspeção":
                     with col_nc1:
                         falha_tipo = st.selectbox(f"Tipo de falha:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"t_{item}")
                         detalhe = st.text_input(f"Observações:", key=f"o_{item}")
-                    
                     with col_nc2:
                         foto = st.file_uploader(f"Foto/Câmera ({item})", type=["jpg", "png", "jpeg"], key=f"f_{item}")
                         if foto:
@@ -136,7 +131,6 @@ if menu == "Nova Inspeção":
                 else:
                     ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
                     data_at = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    
                     df_hist = pd.read_csv(HISTORICO_FILE)
                     novo_reg = [[data_at, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Tipo_Falha"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
                     pd.concat([df_hist, pd.DataFrame(novo_reg, columns=df_hist.columns)]).to_csv(HISTORICO_FILE, index=False)
@@ -146,16 +140,13 @@ if menu == "Nova Inspeção":
                         pdf_bytes = gerar_pdf(ncs, area_sel, sub_area, nome_usuario)
                         st.download_button("📥 1º Baixar PDF do Relatório", pdf_bytes, f"Relatorio_{sub_area}.pdf", "application/pdf")
                         
-                        # MONTAGEM DA MENSAGEM (CORRIGIDA)
                         corpo_msg = f"Relatorio de Inspecao\nLocal: {area_sel} ({sub_area})\nInspetor: {nome_usuario}\n"
                         corpo_msg += "-"*25 + "\n\n"
                         for nc in ncs:
                             corpo_msg += f"Item: {nc['Item']}\nFalha: {nc['Tipo_Falha']}\nObs: {nc['Detalhes']}\n\n"
                         
-                        assunto = f"Manutencao Urgente: {sub_area}"
-                        link_email = f"mailto:?subject={urllib.parse.quote(assunto)}&body={urllib.parse.quote(corpo_msg)}"
+                        link_email = f"mailto:?subject=Manutencao%20{sub_area}&body={urllib.parse.quote(corpo_msg)}"
                         st.link_button("📧 2º Abrir meu E-mail", link_email)
-                        
                         link_zap = f"https://api.whatsapp.com/send?text={urllib.parse.quote(corpo_msg)}"
                         st.link_button("💬 Enviar via WhatsApp", link_zap)
                     else:
@@ -165,19 +156,41 @@ elif menu == "Histórico":
     st.header("📂 Histórico de Ocorrências")
     if os.path.exists(HISTORICO_FILE):
         df = pd.read_csv(HISTORICO_FILE)
-        df_ncs = df[df["Status"] == "Não Conforme"]
+        df_ncs = df[df["Status"] == "Não Conforme"].copy()
+        
         if not df_ncs.empty:
-            for _, row in df_ncs.iloc[::-1].iterrows():
+            # Iteramos pelo índice original para podermos deletar a linha exata
+            for idx, row in df_ncs.iloc[::-1].iterrows():
                 with st.expander(f"🗓️ {row['Data']} | {row['Item']} ({row['Subdivisao']})"):
                     c1, c2 = st.columns([2, 1])
                     with c1:
+                        st.write(f"**Área:** {row['Area']}")
                         st.write(f"**Inspetor:** {row['Usuario']}")
                         st.write(f"**Falha:** {row['Tipo_Falha']}")
                         st.write(f"**Detalhes:** {row['Detalhes']}")
+                        
+                        st.divider()
+                        # --- SEÇÃO DE EXCLUSÃO PROTEGIDA ---
+                        st.write("🗑️ **Excluir este registro?**")
+                        senha_excluir = st.text_input("Senha da Área para apagar:", type="password", key=f"del_pwd_{idx}")
+                        
+                        if st.button("Confirmar Exclusão Definitiva", key=f"btn_del_{idx}"):
+                            # Verifica se a senha corresponde à área do registro
+                            area_do_registro = row['Area']
+                            senha_correta = AREAS[area_do_registro]["senha"]
+                            
+                            if senha_excluir == senha_correta:
+                                # Carrega o CSV completo, remove a linha e salva
+                                df_full = pd.read_csv(HISTORICO_FILE)
+                                df_full = df_full.drop(idx)
+                                df_full.to_csv(HISTORICO_FILE, index=False)
+                                st.success("Registro apagado com sucesso! Recarregando...")
+                                st.rerun()
+                            else:
+                                st.error("Senha incorreta para esta área.")
+                                
                     with c2:
                         if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhuma falha registrada no histórico.")
-
-
