@@ -154,43 +154,54 @@ if menu == "Nova Inspeção":
 
 elif menu == "Histórico":
     st.header("📂 Histórico de Ocorrências")
+    
     if os.path.exists(HISTORICO_FILE):
         df = pd.read_csv(HISTORICO_FILE)
-        df_ncs = df[df["Status"] == "Não Conforme"].copy()
         
-        if not df_ncs.empty:
-            # Iteramos pelo índice original para podermos deletar a linha exata
-            for idx, row in df_ncs.iloc[::-1].iterrows():
+        # --- 1. NOVO FILTRO DE ÁREA ---
+        filtro_area = st.selectbox("🔍 Filtrar Histórico por Área:", ["Mostrar Tudo", "Sede Social", "Operacional"])
+        
+        df_display = df[df["Status"] == "Não Conforme"].copy()
+        
+        if filtro_area != "Mostrar Tudo":
+            df_display = df_display[df_display["Area"] == filtro_area]
+
+        if not df_display.empty:
+            st.info(f"Mostrando {len(df_display)} ocorrências de '{filtro_area}'")
+            
+            # Iteramos do mais recente para o mais antigo
+            for idx, row in df_display.iloc[::-1].iterrows():
                 with st.expander(f"🗓️ {row['Data']} | {row['Item']} ({row['Subdivisao']})"):
-                    c1, c2 = st.columns([2, 1])
-                    with c1:
-                        st.write(f"**Área:** {row['Area']}")
+                    col_info, col_img = st.columns([2, 1])
+                    
+                    with col_info:
+                        st.write(f"**Área Principal:** {row['Area']}")
                         st.write(f"**Inspetor:** {row['Usuario']}")
                         st.write(f"**Falha:** {row['Tipo_Falha']}")
                         st.write(f"**Detalhes:** {row['Detalhes']}")
                         
                         st.divider()
-                        # --- SEÇÃO DE EXCLUSÃO PROTEGIDA ---
-                        st.write("🗑️ **Excluir este registro?**")
-                        senha_excluir = st.text_input("Senha da Área para apagar:", type="password", key=f"del_pwd_{idx}")
                         
-                        if st.button("Confirmar Exclusão Definitiva", key=f"btn_del_{idx}"):
-                            # Verifica se a senha corresponde à área do registro
-                            area_do_registro = row['Area']
-                            senha_correta = AREAS[area_do_registro]["senha"]
+                        # --- 2. SEÇÃO DE EXCLUSÃO (MAIS VISÍVEL) ---
+                        with st.container():
+                            st.error("⚠️ **Zona de Exclusão**")
+                            senha_excluir = st.text_input(f"Senha de {row['Area']} para apagar:", type="password", key=f"del_pwd_{idx}")
                             
-                            if senha_excluir == senha_correta:
-                                # Carrega o CSV completo, remove a linha e salva
-                                df_full = pd.read_csv(HISTORICO_FILE)
-                                df_full = df_full.drop(idx)
-                                df_full.to_csv(HISTORICO_FILE, index=False)
-                                st.success("Registro apagado com sucesso! Recarregando...")
-                                st.rerun()
-                            else:
-                                st.error("Senha incorreta para esta área.")
+                            if st.button(f"Confirmar Exclusão de {row['Item']}", key=f"btn_del_{idx}"):
+                                senha_correta = AREAS[row['Area']]["senha"]
                                 
-                    with c2:
+                                if senha_excluir == senha_correta:
+                                    # Recarrega o CSV completo para garantir que apaguemos a linha certa
+                                    df_full = pd.read_csv(HISTORICO_FILE)
+                                    df_full = df_full.drop(idx)
+                                    df_full.to_csv(HISTORICO_FILE, index=False)
+                                    st.success("Registro apagado!")
+                                    st.rerun()
+                                else:
+                                    st.error("Senha incorreta!")
+                                
+                    with col_img:
                         if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
-                            st.image(row['Foto_Path'], use_container_width=True)
+                            st.image(row['Foto_Path'], caption="Foto da ocorrência", use_container_width=True)
         else:
-            st.info("Nenhuma falha registrada no histórico.")
+            st.info("Nenhum registro encontrado para este filtro.")
