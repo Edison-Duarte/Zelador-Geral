@@ -41,7 +41,7 @@ AREAS = {
     "Flats": {
         "senha": "FLICS",
         "subs": ["Bloco A (garagem, 1º, 2º e 3º andar)", "Bloco B (garagem, 1º, 2º e 3º andar)"],
-        "intens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
+        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
         "periodicidade_dias": 7
                  
     }
@@ -215,6 +215,7 @@ elif menu == "Histórico":
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhum registro encontrado.")
+
 
 
 
