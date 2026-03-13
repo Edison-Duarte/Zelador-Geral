@@ -28,8 +28,8 @@ else:
 AREAS = {
     "Sede Social": {
         "senha": "SSICS",
-        "subs": ["Térreo (bares, terraço, salão etc)", "1º Andar", "2º Andar"],
-        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"],
+        "subs": ["Térreo (bares, terraço, salão, vestiários, Cozinha etc)", "1º Andar", "2º Andar"],
+        "itens": ["Lâmpadas", "Piso", "Corrimãos", "Janelas", "Limpeza", "Pintura"],
         "periodicidade_dias": 15
     },
     "Operacional": {
@@ -208,4 +208,5 @@ elif menu == "Histórico":
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhum registro encontrado.")
+
 
