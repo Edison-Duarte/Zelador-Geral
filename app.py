@@ -37,6 +37,13 @@ AREAS = {
         "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Flutuantes/Escadas", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
         "periodicidade_dias": 7 
+    },
+    "Flats": {
+        "senha": "FLICS",
+        "subs": ["Bloco A (garagem, 1º, 2º e 3º andar)", "Bloco B (garagem, 1º, 2º e 3º andar)"],
+        "intens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
+        "periodicidade_dias": 7
+                 
     }
 }
 
@@ -208,5 +215,6 @@ elif menu == "Histórico":
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhum registro encontrado.")
+
 
 
