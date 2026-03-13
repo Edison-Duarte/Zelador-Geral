@@ -40,7 +40,7 @@ AREAS = {
     },
     "Flats": {
         "senha": "FLICS",
-        "subs": ["Bloco A - Garagem", "Bloco A - 1º" Bloco A - 2º", "Bloco A - 3º", "Bloco A - 4º", "Bloco A - Terraço", "Bloco B- Garagem", "Bloco B - 1º", "Bloco B - 2º", "Bloco B - 3º", "BLoco B - 4º", "Bloco B - Terraço"])"],
+        "subs": ["Bloco A - Garagem", "Bloco A - 1º", "Bloco A - 2º", "Bloco A - 3º", "Bloco A - 4º", "Bloco A - Terraço", "Bloco B- Garagem", "Bloco B - 1º", "Bloco B - 2º", "Bloco B - 3º", "BLoco B - 4º", "Bloco B - Terraço"])"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
         "periodicidade_dias": 7
                  
@@ -215,6 +215,7 @@ elif menu == "Histórico":
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhum registro encontrado.")
+
 
 
 
