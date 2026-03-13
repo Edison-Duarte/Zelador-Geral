@@ -28,13 +28,13 @@ else:
 AREAS = {
     "Sede Social": {
         "senha": "SSICS",
-        "subs": ["Terraço", "1º Andar", "2º Andar"],
+        "subs": ["Térreo (bares, terraço, salão etc)", "1º Andar", "2º Andar"],
         "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"],
         "periodicidade_dias": 15
     },
     "Operacional": {
         "senha": "OPICS",
-        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Flutuantes/Escadas", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
         "periodicidade_dias": 7 
     }
@@ -208,3 +208,4 @@ elif menu == "Histórico":
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhum registro encontrado.")
+
