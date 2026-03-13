@@ -174,7 +174,7 @@ elif menu == "Histórico":
     
     if os.path.exists(HISTORICO_FILE):
         df = pd.read_csv(HISTORICO_FILE)
-        filtro_area = st.selectbox("🔍 Filtrar Histórico por Área:", ["Mostrar Tudo", "Sede Social", "Operacional"])
+        filtro_area = st.selectbox("🔍 Filtrar Histórico por Área:", ["Mostrar Tudo", "Sede Social", "Operacional", "Flats"])
         
         # Filtra apenas não conformes e aplica o filtro de área
         df_display = df[df["Status"] == "Não Conforme"].copy()
@@ -215,6 +215,7 @@ elif menu == "Histórico":
                             st.image(row['Foto_Path'], use_container_width=True)
         else:
             st.info("Nenhum registro encontrado.")
+
 
 
 
