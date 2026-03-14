@@ -57,25 +57,32 @@ if menu == "Nova Inspeção":
             
             st.divider()
             
-            # Formulário Único para salvar apenas no final
-            with st.form("inspecao_completa", clear_on_submit=True):
+            # Formulário para salvar apenas no final
+            with st.form("inspecao_completa"):
+                st.info("💡 Marque 'Não Conforme' para abrir as opções de detalhamento.")
                 lista_respostas = []
                 
                 for item in AREAS[area_sel]["itens"]:
                     st.subheader(f"📍 {item}")
                     status = st.radio(f"Situação {item}:", ["Conforme", "Não Conforme"], key=f"st_{item}", horizontal=True)
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        acao = st.selectbox("Ação:", ["N/A", "Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"ac_{item}")
-                    with col2:
-                        obs = st.text_input("Obs:", key=f"ob_{item}")
-                    
-                    # Usando file_uploader que é mais leve que camera_input para formulários longos
-                    foto = st.file_uploader(f"📸 Foto de {item}", type=["jpg", "jpeg", "png"], key=f"ft_{item}")
+                    # Lógica de exibição condicional (abre apenas se for Não Conforme)
+                    if status == "Não Conforme":
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            acao_item = st.selectbox("Ação Necessária:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"ac_{item}")
+                        with col2:
+                            obs_item = st.text_input("Observações:", key=f"ob_{item}")
+                        
+                        foto_item = st.file_uploader(f"📸 Foto de {item}", type=["jpg", "jpeg", "png"], key=f"ft_{item}")
+                    else:
+                        # Valores padrão se estiver Conforme
+                        acao_item = "N/A"
+                        obs_item = ""
+                        foto_item = None
                     
                     lista_respostas.append({
-                        "Item": item, "Status": status, "Acao": acao, "Detalhes": obs, "Foto": foto
+                        "Item": item, "Status": status, "Acao": acao_item, "Detalhes": obs_item, "Foto": foto_item
                     })
                     st.write("---")
 
@@ -83,7 +90,7 @@ if menu == "Nova Inspeção":
 
             if btn_finalizar:
                 if not nome_usuario:
-                    st.error("Por favor, preencha o nome do inspetor no topo da página.")
+                    st.error("⚠️ Por favor, preencha o nome do inspetor no topo.")
                 else:
                     dados_final = []
                     ncs_relatorio = []
@@ -105,16 +112,15 @@ if menu == "Nova Inspeção":
                             r["Item"], r["Status"], r["Acao"], r["Detalhes"], f_path
                         ])
                     
-                    # Salva no arquivo CSV de uma vez só
                     df_h = pd.read_csv(HISTORICO_FILE)
                     df_novos = pd.DataFrame(dados_final, columns=df_h.columns)
                     pd.concat([df_h, df_novos]).to_csv(HISTORICO_FILE, index=False)
                     
-                    st.success("✅ Inspeção completa salva com sucesso!")
+                    st.success("✅ Tudo pronto! Inspeção salva no histórico.")
                     
                     if ncs_relatorio:
                         pdf = gerar_pdf(ncs_relatorio, area_sel, sub_area, nome_usuario)
-                        st.download_button("📥 Baixar Relatório PDF", pdf, f"Relatorio_{sub_area}.pdf")
+                        st.download_button("📥 Baixar PDF das Falhas", pdf, f"Relatorio_{sub_area}.pdf")
 
 elif menu == "Histórico":
     st.header("📂 Histórico de Ocorrências")
@@ -140,13 +146,15 @@ elif menu == "Histórico":
                     st.write(f"**Obs:** {row['Detalhes']}")
                     
                     st.divider()
-                    if st.checkbox("🗑️ Apagar", key=f"del_{idx}"):
-                        senha = st.text_input("Senha:", type="password", key=f"pw_{idx}")
-                        if st.button("Confirmar", key=f"bt_{idx}"):
+                    if st.checkbox("🗑️ Apagar Registro", key=f"del_{idx}"):
+                        senha = st.text_input("Senha da Área:", type="password", key=f"pw_{idx}")
+                        if st.button("Confirmar Exclusão", key=f"bt_{idx}"):
                             if senha == AREAS[row['Area']]["senha"]:
                                 df_full = pd.read_csv(HISTORICO_FILE).drop(idx)
                                 df_full.to_csv(HISTORICO_FILE, index=False)
                                 st.rerun()
+                            else:
+                                st.error("Senha Incorreta")
                 with c2:
                     if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
                         st.image(row['Foto_Path'])
