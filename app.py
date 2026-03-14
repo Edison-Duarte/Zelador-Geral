@@ -29,7 +29,6 @@ def upload_para_drive(file_buffer, file_name):
     if file_buffer is None:
         return ""
     try:
-        # Limpa o ID de qualquer sujeira de texto
         f_id_dest = st.secrets["spreadsheet"]["folder_id"].strip().replace('"', '').replace("'", "")
         
         file_metadata = {
@@ -37,38 +36,32 @@ def upload_para_drive(file_buffer, file_name):
             'parents': [f_id_dest]
         }
         
-        # Prepara o arquivo
         media = MediaIoBaseUpload(
             io.BytesIO(file_buffer.getvalue()), 
-            mimetype='image/jpeg', 
-            resumable=True
+            mimetype='image/jpeg'
         )
         
-        # Tenta criar o arquivo
+        # O segredo é o supportsAllDrives=True para Service Accounts
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
-            fields='id'
+            fields='id',
+            supportsAllDrives=True 
         ).execute()
         
         file_id = file.get('id')
         
-        # Torna a imagem visível para o App
-        try:
-            drive_service.permissions().create(
-                fileId=file_id, 
-                body={'type': 'anyone', 'role': 'viewer'}
-            ).execute()
-        except:
-            pass
-            
+        # Permissão para o Streamlit ler a foto
+        drive_service.permissions().create(
+            fileId=file_id, 
+            body={'type': 'anyone', 'role': 'viewer'},
+            supportsAllDrives=True
+        ).execute()
+        
         return file_id
     except Exception as e:
-        # Isso vai imprimir o erro detalhado no seu App para investigarmos
-        st.error(f"Tentativa de upload falhou. Pasta ID usada: {f_id_dest}")
-        st.error(f"Erro detalhado: {e}")
-        return "ERRO_TECNICO"
-
+        st.error(f"Erro de Cota/Permissão: {e}")
+        return "ERRO"
 # --- CONFIGURAÇÃO ---
 AREAS = {
     "Sede Social": {"senha": "SSICS", "subs": ["Terraço", "1º Andar", "2º Andar"], 
