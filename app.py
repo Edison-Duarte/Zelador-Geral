@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import base64
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageOps # ImageOps ajuda a corrigir a rotação do celular
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Zelador Virtual", layout="wide", page_icon="🏛️")
@@ -28,24 +28,27 @@ sheet_id = st.secrets["spreadsheet"]["id"]
 sh = client.open_by_key(sheet_id)
 worksheet = sh.get_worksheet(0)
 
-# --- FUNÇÃO DE COMPACTAÇÃO DE IMAGEM ---
+# --- FUNÇÃO DE COMPACTAÇÃO E CORREÇÃO DE CELULAR ---
 def preparar_foto_para_planilha(foto_file):
-    """Reduz o tamanho da imagem para caber em uma célula do Google Sheets (limite 50k caracteres)"""
     if foto_file is None:
         return ""
     try:
+        # Abre a imagem
         img = Image.open(foto_file)
-        # Redimensiona mantendo a proporção (máximo 400px)
+        
+        # CORREÇÃO PARA CELULAR: Ajusta a orientação (evita foto deitada)
+        img = ImageOps.exif_transpose(img)
+        
+        # Redimensiona (máximo 400px) para não estourar o limite da célula
         img.thumbnail((400, 400))
         
-        # Converte para JPEG com compressão
+        # Converte para JPEG e comprime
         buffer = BytesIO()
-        img.convert("RGB").save(buffer, format="JPEG", quality=50)
+        img.convert("RGB").save(buffer, format="JPEG", quality=40) # Qualidade 40 garante que suba rápido no 4G
         
-        # Transforma em Base64 (texto)
         return base64.b64encode(buffer.getvalue()).decode()
     except Exception as e:
-        st.warning(f"Não foi possível processar a imagem: {e}")
+        st.warning(f"Erro ao processar foto do celular: {e}")
         return ""
 
 # --- CONFIGURAÇÕES DO NEGÓCIO ---
@@ -88,10 +91,11 @@ if menu == "Nova Inspeção":
                     if status == "Não Conforme":
                         c1, c2 = st.columns(2)
                         with c1:
-                            acao = st.selectbox("Ação Necessária:", ["Limpeza", "Pintura", "Reparo", "Troca"], key=f"ac_{item}")
+                            acao = st.selectbox("Ação:", ["Limpeza", "Pintura", "Reparo", "Troca"], key=f"ac_{item}")
                         with c2:
-                            obs = st.text_input("Observações:", key=f"ob_{item}")
+                            obs = st.text_input("Obs:", key=f"ob_{item}")
                         
+                        # O segredo para o celular é o key único e o processamento posterior
                         foto = st.file_uploader(f"📸 Foto de {item}", type=["jpg", "jpeg", "png"], key=f"ft_{item}")
                     
                     respostas_temp.append({
@@ -100,12 +104,12 @@ if menu == "Nova Inspeção":
 
             if st.button("🚀 FINALIZAR E SALVAR", use_container_width=True):
                 if not nome_usuario:
-                    st.error("⚠️ Digite o seu nome.")
+                    st.error("⚠️ Digite seu nome.")
                 else:
-                    with st.spinner("Sincronizando com a planilha..."):
+                    with st.spinner("Processando fotos e salvando na planilha..."):
                         dados_para_salvar = []
                         for r in respostas_temp:
-                            # Compacta a foto aqui antes de enviar
+                            # Chama a nova função com correção de orientação
                             foto_texto = preparar_foto_para_planilha(r["Foto"])
                             
                             dados_para_salvar.append([
@@ -114,9 +118,12 @@ if menu == "Nova Inspeção":
                                 r["Item"], r["Status"], r["Acao"], r["Detalhes"], foto_texto
                             ])
                         
-                        worksheet.append_rows(dados_para_salvar)
-                        st.success("✅ Inspeção salva com sucesso!")
-                        st.balloons()
+                        try:
+                            worksheet.append_rows(dados_para_salvar)
+                            st.success("✅ Inspeção salva com sucesso!")
+                            st.balloons()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar na planilha: {e}")
 
 elif menu == "Histórico":
     st.header("📂 Histórico Cloud")
@@ -132,18 +139,14 @@ elif menu == "Histórico":
                     col_txt, col_img = st.columns([2, 1])
                     with col_txt:
                         st.write(f"**Inspetor:** {row['Usuario']}")
-                        st.write(f"**Área:** {row['Area']}")
                         st.write(f"**Ação:** {row['Acao']}")
                         st.write(f"**Detalhes:** {row['Detalhes']}")
                     
                     with col_img:
                         foto_b64 = row.get('Foto_Path', "")
                         if foto_b64 and len(str(foto_b64)) > 100:
-                            try:
-                                st.image(base64.b64decode(foto_b64), caption="Foto da Ocorrência")
-                            except:
-                                st.write("Erro ao carregar imagem.")
+                            st.image(base64.b64decode(foto_b64), use_container_width=True)
                         else:
                             st.write("Sem foto.")
     except Exception as e:
-        st.error(f"Erro ao ler dados: {e}")
+        st.error(f"Erro ao ler histórico: {e}")
