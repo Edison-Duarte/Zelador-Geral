@@ -2,80 +2,107 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 from datetime import datetime
-import io
+import base64
+from io import BytesIO
 
-# --- CONEXÃO ---
+# --- CONEXÃO SEGURA ---
 scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
-def get_creds():
+def get_gspread_client():
     creds_info = st.secrets["gcp_service_account"].to_dict()
     if "\\n" in creds_info["private_key"]:
         creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-    return Credentials.from_service_account_info(creds_info, scopes=scope)
+    credentials = Credentials.from_service_account_info(creds_info, scopes=scope)
+    return gspread.authorize(credentials)
 
-creds = get_creds()
-client = gspread.authorize(creds)
-drive_service = build('drive', 'v3', credentials=creds)
-
-# Abre a planilha
+client = get_gspread_client()
 sheet_id = st.secrets["spreadsheet"]["id"]
 sh = client.open_by_key(sheet_id)
 worksheet = sh.get_worksheet(0)
 
-# Função para fazer upload da foto para o Google Drive
-def upload_foto_drive(foto_file, nome_arquivo):
-    try:
-        file_metadata = {'name': nome_arquivo}
-        media = MediaIoBaseUpload(io.BytesIO(foto_file.getvalue()), mimetype='image/jpeg')
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        # Torna a foto pública para que o Streamlit consiga exibir
-        drive_service.permissions().create(fileId=file.get('id'), body={'type': 'anyone', 'role': 'viewer'}).execute()
-        return f"https://lh3.googleusercontent.com/u/0/d/{file.get('id')}"
-    except:
-        return ""
+# --- FUNÇÃO PARA CONVERTER FOTO EM TEXTO ---
+def converter_foto_para_base64(foto_file):
+    if foto_file is not None:
+        return base64.b64encode(foto_file.getvalue()).decode()
+    return ""
 
-# --- INTERFACE ---
-st.title("🏛️ Zelador Virtual + Drive Sync")
+# --- CONFIGURAÇÃO ---
+AREAS = {
+    "Sede Social": {"senha": "SSICS", "subs": ["Terraço", "1º Andar", "2º Andar"], 
+                    "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]},
+    "Operacional": {"senha": "OPICS", "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
+                    "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]}
+}
+
+st.title("🏛️ Zelador Virtual - Cloud")
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
 if menu == "Nova Inspeção":
     nome_usuario = st.text_input("Nome do Inspetor:")
-    area_sel = st.selectbox("Área:", ["Sede Social", "Operacional"])
-    
-    # ... (restante do código de seleção de itens igual ao anterior) ...
-    # Exemplo simplificado do loop de salvamento:
-    
-    if st.button("🚀 FINALIZAR"):
-        with st.spinner("Enviando dados e fotos..."):
-            dados_finais = []
-            for item in respostas_temp: # respostas_temp é sua lista de itens
-                link_foto = ""
-                if item["Foto"]:
-                    nome_f = f"{datetime.now().strftime('%Y%m%d')}_{item['Item']}.jpg"
-                    link_foto = upload_foto_drive(item["Foto"], nome_f)
-                
-                dados_finais.append([
-                    datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    nome_usuario, area_sel, item["Subdivisao"],
-                    item["Item"], item["Status"], item["Acao"], item["Detalhes"], link_foto
-                ])
+    area_sel = st.selectbox("Área Principal:", ["Selecione..."] + list(AREAS.keys()))
+
+    if area_sel != "Selecione...":
+        senha_in = st.text_input("Senha da Área:", type="password")
+        if senha_in == AREAS[area_sel]["senha"]:
+            sub_area = st.selectbox("Subdivisão:", AREAS[area_sel]["subs"])
+            st.divider()
             
-            worksheet.append_rows(dados_finais)
-            st.success("Salvo com sucesso!")
+            respostas_temp = []
+            for item in AREAS[area_sel]["itens"]:
+                with st.container(border=True):
+                    st.subheader(f"📍 {item}")
+                    status = st.radio(f"Situação {item}:", ["Conforme", "Não Conforme"], key=f"st_{item}", horizontal=True)
+                    
+                    acao, obs, foto = "N/A", "", None
+                    if status == "Não Conforme":
+                        c1, c2 = st.columns(2)
+                        with c1: acao = st.selectbox("Ação:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"ac_{item}")
+                        with c2: obs = st.text_input("Obs:", key=f"ob_{item}")
+                        foto = st.file_uploader(f"📸 Foto de {item}", type=["jpg", "png", "jpeg"], key=f"ft_{item}")
+                    
+                    respostas_temp.append({"Item": item, "Status": status, "Acao": acao, "Detalhes": obs, "Foto": foto})
+
+            if st.button("🚀 FINALIZAR E SALVAR NA PLANILHA"):
+                if not nome_usuario:
+                    st.error("Preencha o nome do inspetor.")
+                else:
+                    with st.spinner("Salvando dados e imagens..."):
+                        dados_para_planilha = []
+                        for r in respostas_temp:
+                            # Converte a foto em texto aqui
+                            foto_serializada = converter_foto_para_base64(r["Foto"])
+                            
+                            dados_para_planilha.append([
+                                datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                nome_usuario, area_sel, sub_area,
+                                r["Item"], r["Status"], r["Acao"], r["Detalhes"], foto_serializada
+                            ])
+                        
+                        worksheet.append_rows(dados_para_planilha)
+                        st.success("✅ Tudo salvo na planilha (incluindo fotos)!")
+                        st.balloons()
 
 elif menu == "Histórico":
     st.header("📂 Histórico com Fotos")
     records = worksheet.get_all_records()
-    if records:
+    if not records:
+        st.info("Nenhum dado encontrado.")
+    else:
         df = pd.DataFrame(records)
         for idx, row in df.iloc[::-1].iterrows():
-            with st.expander(f"{row['Data']} - {row['Item']}"):
-                st.write(f"**Status:** {row['Status']} | **Ação:** {row['Acao']}")
-                # AQUI EXIBE A FOTO VINDA DO LINK DO DRIVE
-                if row['Foto_Path'] and "http" in str(row['Foto_Path']):
-                    st.image(row['Foto_Path'], caption="Foto da Ocorrência")
-                else:
-                    st.info("Sem foto disponível.")
+            emoji = "✅" if row['Status'] == "Conforme" else "🔴"
+            with st.expander(f"{emoji} {row['Data']} - {row['Item']} ({row['Subdivisao']})"):
+                col_txt, col_img = st.columns([2, 1])
+                with col_txt:
+                    st.write(f"**Inspetor:** {row['Usuario']}")
+                    st.write(f"**Ação:** {row['Acao']}")
+                    st.write(f"**Detalhes:** {row['Detalhes']}")
+                
+                with col_img:
+                    # Se houver texto de imagem, transforma de volta em foto
+                    foto_b64 = row.get('Foto_Path', "")
+                    if foto_b64 and len(str(foto_b64)) > 100:
+                        st.image(base64.b64decode(foto_b64), caption="Foto da Ocorrência")
+                    else:
+                        st.write("Sem foto.")
