@@ -10,16 +10,14 @@ st.set_page_config(page_title="Zelador Virtual", layout="wide", page_icon="🏛�
 
 HISTORICO_FILE = "historico_inspecoes.csv"
 
-# --- LÓGICA DE CORREÇÃO DO ARQUIVO CSV ---
+# --- LÓGICA DE CORREÇÃO E INICIALIZAÇÃO DO CSV ---
 if os.path.exists(HISTORICO_FILE):
     try:
         df_fix = pd.read_csv(HISTORICO_FILE)
-        # Se ainda existir a coluna antiga, renomeia para a nova
         if "Tipo_Falha" in df_fix.columns:
             df_fix = df_fix.rename(columns={"Tipo_Falha": "Acao"})
             df_fix.to_csv(HISTORICO_FILE, index=False)
-    except:
-        pass
+    except: pass
 else:
     df_init = pd.DataFrame(columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Acao", "Detalhes", "Foto_Path"])
     df_init.to_csv(HISTORICO_FILE, index=False)
@@ -28,27 +26,19 @@ else:
 AREAS = {
     "Sede Social": {
         "senha": "SSICS",
-        "subs": ["Térreo (bares, terraço, salão, vestiários, Cozinha etc)", "1º Andar", "2º Andar"],
-        "itens": ["Lâmpadas", "Piso", "Corrimãos", "Janelas", "Limpeza", "Pintura"],
+        "subs": ["Terraço", "1º Andar", "2º Andar"],
+        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"],
         "periodicidade_dias": 15
     },
     "Operacional": {
         "senha": "OPICS",
-        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Flutuantes/Escadas", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
         "periodicidade_dias": 7 
-    },
-    "Flats": {
-        "senha": "FLICS",
-        "subs": ["Bloco A - Garagem", "Bloco A - 1º", "Bloco A - 2º", "Bloco A - 3º", "Bloco A - 4º", "Bloco A - Terraço", "Bloco B- Garagem", "Bloco B - 1º", "Bloco B - 2º", "Bloco B - 3º", "BLoco B - 4º", "Bloco B - Terraço"],
-        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"],
-        "periodicidade_dias": 7
-                 
     }
 }
 
 # --- FUNÇÕES ---
-
 def verificar_pendencias():
     if not os.path.exists(HISTORICO_FILE): return []
     try:
@@ -97,22 +87,13 @@ menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
 if menu == "Nova Inspeção":
     st.header("📋 Check-list de Inspeção")
-    
     pendentes = verificar_pendencias()
     if pendentes:
-        st.warning("### ⚠️ Hoje devem ser inspecionadas as áreas:")
+        st.warning("### ⚠️ Áreas Pendentes:")
         for p in pendentes: st.write(p)
-    else:
-        st.success("✅ Nenhuma inspeção pendente para hoje.")
-
-    with st.expander("📅 Quadro de Periodicidade"):
-        dados_quadro = [{"Área Principal": a, "Frequência": f"A cada {i['periodicidade_dias']} dias", "Subáreas": ", ".join(i['subs'])} for a, i in AREAS.items()]
-        st.table(dados_quadro)
     
-    st.divider()
-
     nome_usuario = st.text_input("Nome do Inspetor:")
-    area_sel = st.selectbox("Selecione a Área Principal:", ["Selecione..."] + list(AREAS.keys()))
+    area_sel = st.selectbox("Área Principal:", ["Selecione..."] + list(AREAS.keys()))
 
     if area_sel != "Selecione...":
         senha_in = st.text_input("Senha da Área:", type="password")
@@ -125,7 +106,6 @@ if menu == "Nova Inspeção":
             for item in AREAS[area_sel]["itens"]:
                 st.markdown(f"#### {item}")
                 status = st.radio(f"Status para {item}", ["Conforme", "Não Conforme"], key=f"s_{item}", horizontal=True)
-                
                 acao_val, detalhe, foto_path = "", "", ""
                 if status == "Não Conforme":
                     col_nc1, col_nc2 = st.columns([1, 1])
@@ -133,93 +113,75 @@ if menu == "Nova Inspeção":
                         acao_val = st.selectbox(f"Ação necessária:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], key=f"a_{item}")
                         detalhe = st.text_input(f"Observações:", key=f"o_{item}")
                     with col_nc2:
-                        foto = st.file_uploader(f"Foto/Câmera ({item})", type=["jpg", "png", "jpeg"], key=f"f_{item}")
+                        foto = st.file_uploader(f"Foto ({item})", type=["jpg", "png", "jpeg"], key=f"f_{item}")
                         if foto:
                             foto_path = f"fotos/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{item}.jpg"
                             os.makedirs("fotos", exist_ok=True)
                             with open(foto_path, "wb") as f: f.write(foto.getbuffer())
-                
                 respostas.append({"Item": item, "Status": status, "Acao": acao_val, "Detalhes": detalhe, "Foto_Path": foto_path})
                 st.divider()
 
-            if st.button("🚀 Finalizar e Enviar Relatório"):
-                if not nome_usuario:
-                    st.error("Por favor, preencha o nome do inspetor.")
+            if st.button("🚀 Finalizar e Enviar"):
+                if not nome_usuario: st.error("Preencha o nome!")
                 else:
                     ncs = [r for r in respostas if r["Status"] == "Não Conforme"]
-                    data_at = datetime.now().strftime("%d/%m/%Y %H:%M")
                     df_hist = pd.read_csv(HISTORICO_FILE)
-                    novo_reg = [[data_at, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Acao"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
+                    novo_reg = [[datetime.now().strftime("%d/%m/%Y %H:%M"), nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Acao"], r["Detalhes"], r["Foto_Path"]] for r in respostas]
                     pd.concat([df_hist, pd.DataFrame(novo_reg, columns=df_hist.columns)]).to_csv(HISTORICO_FILE, index=False)
-
                     if ncs:
-                        st.warning(f"⚠️ {len(ncs)} não conformidades registradas.")
                         pdf_bytes = gerar_pdf(ncs, area_sel, sub_area, nome_usuario)
-                        st.download_button("📥 1º Baixar PDF do Relatório", pdf_bytes, f"Relatorio_{sub_area}.pdf", "application/pdf")
-                        
-                        corpo_msg = f"Relatorio de Inspecao\nLocal: {area_sel} ({sub_area})\nInspetor: {nome_usuario}\n"
-                        corpo_msg += "-"*25 + "\n\n"
-                        for nc in ncs:
-                            corpo_msg += f"Item: {nc['Item']}\nAção: {nc['Acao']}\nObs: {nc['Detalhes']}\n\n"
-                        
-                        link_email = f"mailto:?subject=Manutencao%20{sub_area}&body={urllib.parse.quote(corpo_msg)}"
-                        st.link_button("📧 2º Abrir meu E-mail", link_email)
-                        link_zap = f"https://api.whatsapp.com/send?text={urllib.parse.quote(corpo_msg)}"
-                        st.link_button("💬 Enviar via WhatsApp", link_zap)
-                    else:
-                        st.success(f"Inspeção finalizada com sucesso!")
+                        st.download_button("📥 Baixar PDF", pdf_bytes, f"Relatorio_{sub_area}.pdf")
+                    st.success("Relatório registrado!")
 
 elif menu == "Histórico":
     st.header("📂 Histórico de Ocorrências")
-    
     if os.path.exists(HISTORICO_FILE):
         df = pd.read_csv(HISTORICO_FILE)
-        filtro_area = st.selectbox("🔍 Filtrar Histórico por Área:", ["Mostrar Tudo", "Sede Social", "Operacional", "Flats"])
-        
-        # Filtra apenas não conformes e aplica o filtro de área
+        filtro_area = st.selectbox("🔍 Filtrar por Área:", ["Mostrar Tudo", "Sede Social", "Operacional"])
         df_display = df[df["Status"] == "Não Conforme"].copy()
-        if filtro_area != "Mostrar Tudo":
-            df_display = df_display[df_display["Area"] == filtro_area]
+        if filtro_area != "Mostrar Tudo": df_display = df_display[df_display["Area"] == filtro_area]
 
-        if not df_display.empty:
-            for idx, row in df_display.iloc[::-1].iterrows():
-                with st.expander(f"🗓️ {row['Data']} | {row['Item']} ({row['Subdivisao']})"):
-                    col_info, col_img = st.columns([2, 1])
+        for idx, row in df_display.iloc[::-1].iterrows():
+            with st.expander(f"🗓️ {row['Data']} | {row['Item']} ({row['Subdivisao']})"):
+                col_info, col_img = st.columns([2, 1])
+                with col_info:
+                    st.write(f"**Ação:** {row.get('Acao', 'N/A')}")
+                    st.write(f"**Detalhes:** {row['Detalhes']}")
+                    st.divider()
                     
-                    with col_info:
-                        st.write(f"**Área Principal:** {row['Area']}")
-                        st.write(f"**Inspetor:** {row['Usuario']}")
-                        # Aqui usamos o get para evitar erro caso a coluna ainda esteja sendo processada
-                        st.write(f"**Ação Definida:** {row.get('Acao', 'Não definida')}")
-                        st.write(f"**Detalhes:** {row['Detalhes']}")
-                        
-                        st.divider()
-                        
-                        with st.container():
-                            st.error("⚠️ **Zona de Exclusão**")
-                            senha_excluir = st.text_input(f"Senha de {row['Area']} para apagar:", type="password", key=f"del_pwd_{idx}")
+                    # --- SISTEMA DE EDIÇÃO ---
+                    if st.checkbox("✏️ Editar este registro", key=f"edit_chk_{idx}"):
+                        senha_edit = st.text_input("Senha para editar:", type="password", key=f"pwd_edit_{idx}")
+                        if senha_edit == AREAS[row['Area']]["senha"]:
+                            nova_acao = st.selectbox("Nova Ação:", ["Limpeza Imediata", "Pintura", "Reparo", "Troca"], index=0, key=f"new_acao_{idx}")
+                            novo_detalhe = st.text_area("Novas Observações:", value=row['Detalhes'], key=f"new_det_{idx}")
+                            nova_foto = st.file_uploader("Substituir/Adicionar Foto:", type=["jpg","png","jpeg"], key=f"new_foto_{idx}")
                             
-                            if st.button(f"Confirmar Exclusão de {row['Item']}", key=f"btn_del_{idx}"):
-                                senha_correta = AREAS[row['Area']]["senha"]
-                                if senha_excluir == senha_correta:
-                                    df_full = pd.read_csv(HISTORICO_FILE)
-                                    df_full = df_full.drop(idx)
-                                    df_full.to_csv(HISTORICO_FILE, index=False)
-                                    st.success("Registro apagado!")
-                                    st.rerun()
-                                else:
-                                    st.error("Senha incorreta!")
-                                
-                    with col_img:
-                        if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
-                            st.image(row['Foto_Path'], use_container_width=True)
-        else:
-            st.info("Nenhum registro encontrado.")
-
-
-
-
-
-
-
-
+                            if st.button("Salvar Alterações", key=f"save_{idx}"):
+                                df_full = pd.read_csv(HISTORICO_FILE)
+                                df_full.at[idx, 'Acao'] = nova_acao
+                                df_full.at[idx, 'Detalhes'] = novo_detalhe
+                                if nova_foto:
+                                    path = f"fotos/edit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                                    os.makedirs("fotos", exist_ok=True)
+                                    with open(path, "wb") as f: f.write(nova_foto.getbuffer())
+                                    df_full.at[idx, 'Foto_Path'] = path
+                                df_full.to_csv(HISTORICO_FILE, index=False)
+                                st.success("Atualizado!")
+                                st.rerun()
+                        elif senha_edit: st.error("Senha incorreta")
+                    
+                    # --- SISTEMA DE EXCLUSÃO ---
+                    if st.checkbox("🗑️ Excluir este registro", key=f"del_chk_{idx}"):
+                        senha_del = st.text_input("Senha para excluir:", type="password", key=f"pwd_del_{idx}")
+                        if st.button("Confirmar Exclusão", key=f"btn_del_{idx}"):
+                            if senha_del == AREAS[row['Area']]["senha"]:
+                                df_full = pd.read_csv(HISTORICO_FILE)
+                                df_full = df_full.drop(idx)
+                                df_full.to_csv(HISTORICO_FILE, index=False)
+                                st.rerun()
+                            else: st.error("Senha incorreta")
+                            
+                with col_img:
+                    if str(row['Foto_Path']) != "nan" and row['Foto_Path']:
+                        st.image(row['Foto_Path'], use_container_width=True)
