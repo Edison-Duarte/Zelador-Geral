@@ -42,34 +42,33 @@ def preparar_foto_para_planilha(foto_file):
         return base64.b64encode(buffer.getvalue()).decode()
     except: return ""
 
-# --- 4. FUNÇÕES DE RELATÓRIO (PDF E E-MAIL) ---
-def gerar_pdf(dados_inspecao):
+# --- 4. FUNÇÕES DE RELATÓRIO ---
+def gerar_pdf(dataframe):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(190, 10, "Relatório de Inspeção Individual", ln=True, align="C")
+    pdf.cell(190, 10, "Relatório de Zeladoria", ln=True, align="C")
     pdf.set_font("Arial", "", 10)
-    pdf.cell(190, 10, f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+    pdf.cell(190, 10, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
     pdf.ln(10)
 
-    for item in dados_inspecao:
+    for _, row in dataframe.iterrows():
         pdf.set_fill_color(240, 240, 240)
         pdf.set_font("Arial", "B", 11)
-        pdf.cell(190, 8, f"Item: {item[4]} - {item[5]}", ln=True, fill=True)
+        pdf.cell(190, 8, f"Item: {row['Item']} - {row['Status']}", ln=True, fill=True)
         pdf.set_font("Arial", "", 10)
-        pdf.multi_cell(190, 6, f"Local: {item[2]} ({item[3]})\nInspetor: {item[1]}\nAção: {item[6]}\nObs: {item[7]}")
+        pdf.multi_cell(190, 6, f"Data: {row['Data']}\nLocal: {row['Area']} ({row['Subdivisao']})\nInspetor: {row['Usuario']}\nAção: {row['Acao']}\nObs: {row['Detalhes']}")
         pdf.ln(5)
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
-def formatar_corpo_email(dados_inspecao):
-    corpo = "RELATÓRIO DE INSPEÇÃO RECENTE\n" + "-"*30 + "\n\n"
-    for item in dados_inspecao:
-        simbolo = " [!] " if item[5] == "Não Conforme" else " [OK] "
-        corpo += f"{simbolo} {item[4]}: {item[5]}\n   Ação: {item[6]}\n   Obs: {item[7]}\n\n"
-    corpo += f"\nGerado via Zelador Virtual."
+def formatar_corpo_email(dataframe):
+    corpo = "RELATÓRIO DE ZELADORIA\n" + "-"*30 + "\n\n"
+    for _, r in dataframe.iterrows():
+        simbolo = " [!] " if r['Status'] == "Não Conforme" else " [OK] "
+        corpo += f"{simbolo} {r['Item']}: {r['Status']}\n   Local: {r['Area']} ({r['Subdivisao']})\n   Obs: {r['Detalhes']}\n\n"
     return corpo
 
-# --- 5. INTERFACE ---
+# --- 5. DADOS ---
 AREAS = {
     "Sede Social": {"senha": "SSICS", "subs": ["Terraço", "1º Andar", "2º Andar"], "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]},
     "Operacional": {"senha": "OPICS", "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"], "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]}
@@ -96,41 +95,28 @@ if menu == "Nova Inspeção":
                         c1, c2 = st.columns(2)
                         with c1: acao = st.selectbox("Ação:", ["Limpeza", "Pintura", "Reparo", "Troca"], key=f"ac_{item}")
                         with c2: obs = st.text_input("Obs:", key=f"ob_{item}")
-                        origem = st.radio("Origem foto:", ["Câmera", "Galeria"], key=f"ori_{item}", horizontal=True)
-                        foto = st.camera_input(f"Capturar {item}", key=f"cam_{item}") if origem == "Câmera" else st.file_uploader(f"Anexar {item}", type=["jpg","png"], key=f"fl_{item}")
+                        ori = st.radio("Origem foto:", ["Câmera", "Galeria"], key=f"ori_{item}", horizontal=True)
+                        foto = st.camera_input(f"Foto {item}", key=f"cam_{item}") if ori == "Câmera" else st.file_uploader(f"Anexar {item}", type=["jpg","png"], key=f"fl_{item}")
                     respostas_temp.append({"Item": item, "Status": status, "Acao": acao, "Detalhes": obs, "Foto": foto})
 
-            if st.button("🚀 FINALIZAR", use_container_width=True):
-                if not nome_usuario:
-                    st.error("Digite o nome do inspetor.")
+            if st.button("🚀 FINALIZAR"):
+                if not nome_usuario: st.error("Preencha o nome.")
                 else:
                     with st.spinner("Gravando..."):
-                        dados_para_salvar = []
+                        dados_salvar = []
                         agora = datetime.now().strftime("%d/%m/%Y %H:%M")
                         for r in respostas_temp:
-                            foto_txt = preparar_foto_para_planilha(r["Foto"])
-                            dados_para_salvar.append([agora, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Acao"], r["Detalhes"], foto_txt])
-                        
-                        worksheet.append_rows(dados_para_salvar)
-                        st.success("✅ Inspeção finalizada e salva!")
-                        
-                        # --- NOVAS OPÇÕES APÓS FINALIZAR ---
+                            f_txt = preparar_foto_para_planilha(r["Foto"])
+                            dados_salvar.append([agora, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Acao"], r["Detalhes"], f_txt])
+                        worksheet.append_rows(dados_salvar)
+                        st.success("✅ Salvo!")
                         st.divider()
                         st.subheader("📦 Compartilhar esta Inspeção:")
                         c1, c2, c3 = st.columns(3)
-                        
-                        # PDF da inspeção atual
-                        pdf_inspeção = gerar_pdf(dados_para_salvar)
-                        c1.download_button("📥 Baixar PDF", pdf_inspeção, "inspecao.pdf", "application/pdf")
-                        
-                        # WhatsApp
-                        msg_wpp = f"*Inspeção Realizada*\nInspetor: {nome_usuario}\nLocal: {area_sel}\nItens: {len(dados_para_salvar)}"
-                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote(msg_wpp)}")
-                        
-                        # E-mail
-                        corpo_email = formatar_corpo_email(dados_para_salvar)
-                        subj = urllib.parse.quote(f"Inspeção: {area_sel} - {agora}")
-                        c3.link_button("📧 E-mail", f"mailto:?subject={subj}&body={urllib.parse.quote(corpo_email)}")
+                        df_atual = pd.DataFrame(dados_salvar, columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Acao", "Detalhes", "Foto_Path"])
+                        c1.download_button("📥 PDF", gerar_pdf(df_atual), "inspecao.pdf")
+                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Inspeção realizada com sucesso.')}")
+                        c3.link_button("📧 E-mail", f"mailto:?subject=Inspeção&body={urllib.parse.quote(formatar_corpo_email(df_atual))}")
 
 elif menu == "Histórico":
     st.title("📂 Histórico Cloud")
@@ -140,30 +126,52 @@ elif menu == "Histórico":
             df = pd.DataFrame(records)
             df['Data_dt'] = pd.to_datetime(df['Data'], format="%d/%m/%Y %H:%M", errors='coerce')
             
-            with st.expander("🔍 Filtros de Relatório"):
-                c1, c2, c3 = st.columns(3)
-                with c1: di = st.date_input("Início", datetime.now().replace(day=1))
-                with c2: dfim = st.date_input("Fim", datetime.now())
-                with c3: stt = st.multiselect("Status", ["Conforme", "Não Conforme"], default=["Conforme", "Não Conforme"])
+            with st.expander("🔍 Filtros de Busca e Relatório", expanded=True):
+                # Primeira linha de filtros
+                f1, f2, f3 = st.columns(3)
+                with f1: data_ini = st.date_input("Início", datetime.now().replace(day=1))
+                with f2: data_fim = st.date_input("Fim", datetime.now())
+                with f3: f_status = st.multiselect("Status", ["Conforme", "Não Conforme"], default=["Conforme", "Não Conforme"])
                 
-                df_f = df[(df['Data_dt'].dt.date >= di) & (df['Data_dt'].dt.date <= dfim) & (df['Status'].isin(stt))]
-                
+                # Segunda linha de filtros (Áreas e Subdivisões)
+                f4, f5 = st.columns(2)
+                with f4:
+                    f_area = st.multiselect("Filtrar Área Principal:", list(AREAS.keys()), default=list(AREAS.keys()))
+                with f5:
+                    # Subdivisões dinâmicas baseadas nas áreas escolhidas
+                    opcoes_subs = []
+                    for a in f_area:
+                        opcoes_subs.extend(AREAS[a]["subs"])
+                    f_sub = st.multiselect("Filtrar Subdivisões:", opcoes_subs, default=opcoes_subs)
+
+                # Aplicação dos filtros
+                mask = (df['Data_dt'].dt.date >= data_ini) & \
+                       (df['Data_dt'].dt.date <= data_fim) & \
+                       (df['Status'].isin(f_status)) & \
+                       (df['Area'].isin(f_area)) & \
+                       (df['Subdivisao'].isin(f_sub))
+                df_f = df.loc[mask]
+
                 if not df_f.empty:
                     st.divider()
-                    col_p, col_w, col_e = st.columns(3)
-                    # Relatórios do Histórico (múltiplos itens)
-                    dados_historico = df_f.values.tolist()
-                    pdf_h = gerar_pdf(dados_historico)
-                    col_p.download_button("📥 PDF Geral", pdf_h, "relatorio_geral.pdf")
-                    col_w.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Relatorio Geral Disponivel')}")
-                    col_e.link_button("📧 E-mail", f"mailto:?subject=Relatorio Geral&body={urllib.parse.quote(formatar_corpo_email(dados_historico))}")
+                    st.write(f"📊 **{len(df_f)}** itens encontrados.")
+                    c_pdf, c_wpp, c_mail = st.columns(3)
+                    c_pdf.download_button("📥 PDF Filtrado", gerar_pdf(df_f), "relatorio_zeladoria.pdf")
+                    msg_w = f"Relatório de Zeladoria: {len(df_f)} itens encontrados no período selecionado."
+                    c_wpp.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote(msg_w)}")
+                    c_mail.link_button("📧 E-mail Detalhado", f"mailto:?subject=Relatorio&body={urllib.parse.quote(formatar_corpo_email(df_f))}")
 
+            # Exibição dos cards
             for _, row in df_f.iloc[::-1].iterrows():
                 emoji = "✅" if row['Status'] == "Conforme" else "🔴"
-                with st.expander(f"{emoji} {row['Data']} - {row['Item']}"):
-                    c_i, c_p = st.columns([2, 1])
-                    with c_i: st.write(f"**Inspetor:** {row['Usuario']}\n\n**Obs:** {row['Detalhes']}")
-                    with c_p:
+                with st.expander(f"{emoji} {row['Data']} - {row['Area']} ({row['Subdivisao']}) - {row['Item']}"):
+                    col_txt, col_img = st.columns([2, 1])
+                    with col_txt:
+                        st.write(f"**Inspetor:** {row['Usuario']}")
+                        st.write(f"**Status:** {row['Status']}")
+                        st.write(f"**Obs:** {row['Detalhes']}")
+                    with col_img:
                         f_b64 = row.get('Foto_Path', "")
-                        if f_b64 and len(str(f_b64)) > 100: st.image(base64.b64decode(f_b64), use_container_width=True)
-    except Exception as e: st.error(f"Erro: {e}")
+                        if f_b64 and len(str(f_b64)) > 100:
+                            st.image(base64.b64decode(f_b64), use_container_width=True)
+    except Exception as e: st.error(f"Erro ao carregar histórico: {e}")
