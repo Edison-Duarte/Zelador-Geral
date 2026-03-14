@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import base64
 from io import BytesIO
-from PIL import Image, ImageOps # ImageOps ajuda a corrigir a rotação do celular
+from PIL import Image, ImageOps
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Zelador Virtual", layout="wide", page_icon="🏛️")
@@ -28,30 +28,23 @@ sheet_id = st.secrets["spreadsheet"]["id"]
 sh = client.open_by_key(sheet_id)
 worksheet = sh.get_worksheet(0)
 
-# --- FUNÇÃO DE COMPACTAÇÃO E CORREÇÃO DE CELULAR ---
+# --- FUNÇÃO DE PROCESSAMENTO DA IMAGEM ---
 def preparar_foto_para_planilha(foto_file):
     if foto_file is None:
         return ""
     try:
-        # Abre a imagem
         img = Image.open(foto_file)
+        img = ImageOps.exif_transpose(img) # Corrige rotação automática
+        img.thumbnail((400, 400)) # Reduz para caber na planilha
         
-        # CORREÇÃO PARA CELULAR: Ajusta a orientação (evita foto deitada)
-        img = ImageOps.exif_transpose(img)
-        
-        # Redimensiona (máximo 400px) para não estourar o limite da célula
-        img.thumbnail((400, 400))
-        
-        # Converte para JPEG e comprime
         buffer = BytesIO()
-        img.convert("RGB").save(buffer, format="JPEG", quality=40) # Qualidade 40 garante que suba rápido no 4G
-        
+        img.convert("RGB").save(buffer, format="JPEG", quality=40)
         return base64.b64encode(buffer.getvalue()).decode()
     except Exception as e:
-        st.warning(f"Erro ao processar foto do celular: {e}")
+        st.warning(f"Erro ao processar imagem: {e}")
         return ""
 
-# --- CONFIGURAÇÕES DO NEGÓCIO ---
+# --- CONFIGURAÇÕES ---
 AREAS = {
     "Sede Social": {
         "senha": "SSICS", 
@@ -65,8 +58,7 @@ AREAS = {
     }
 }
 
-# --- INTERFACE ---
-st.title("🏛️ Zelador Virtual")
+# --- MENU LATERAL ---
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
 if menu == "Nova Inspeção":
@@ -95,8 +87,9 @@ if menu == "Nova Inspeção":
                         with c2:
                             obs = st.text_input("Obs:", key=f"ob_{item}")
                         
-                        # O segredo para o celular é o key único e o processamento posterior
-                        foto = st.file_uploader(f"📸 Foto de {item}", type=["jpg", "jpeg", "png"], key=f"ft_{item}")
+                        # AQUI ESTÁ A SOLUÇÃO: camera_input em vez de file_uploader
+                        st.write(f"📸 Tire a foto de: {item}")
+                        foto = st.camera_input(f"Capturar {item}", key=f"cam_{item}")
                     
                     respostas_temp.append({
                         "Item": item, "Status": status, "Acao": acao, "Detalhes": obs, "Foto": foto
@@ -106,10 +99,9 @@ if menu == "Nova Inspeção":
                 if not nome_usuario:
                     st.error("⚠️ Digite seu nome.")
                 else:
-                    with st.spinner("Processando fotos e salvando na planilha..."):
+                    with st.spinner("Gravando dados..."):
                         dados_para_salvar = []
                         for r in respostas_temp:
-                            # Chama a nova função com correção de orientação
                             foto_texto = preparar_foto_para_planilha(r["Foto"])
                             
                             dados_para_salvar.append([
@@ -120,33 +112,30 @@ if menu == "Nova Inspeção":
                         
                         try:
                             worksheet.append_rows(dados_para_salvar)
-                            st.success("✅ Inspeção salva com sucesso!")
+                            st.success("✅ Inspeção salva!")
                             st.balloons()
                         except Exception as e:
-                            st.error(f"Erro ao salvar na planilha: {e}")
+                            st.error(f"Erro ao salvar: {e}")
 
 elif menu == "Histórico":
     st.header("📂 Histórico Cloud")
     try:
         records = worksheet.get_all_records()
-        if not records:
-            st.info("Nenhum registro encontrado.")
-        else:
+        if records:
             df = pd.DataFrame(records)
             for idx, row in df.iloc[::-1].iterrows():
                 emoji = "✅" if row['Status'] == "Conforme" else "🔴"
-                with st.expander(f"{emoji} {row['Data']} - {row['Item']} ({row['Subdivisao']})"):
-                    col_txt, col_img = st.columns([2, 1])
-                    with col_txt:
+                with st.expander(f"{emoji} {row['Data']} - {row['Item']}"):
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
                         st.write(f"**Inspetor:** {row['Usuario']}")
                         st.write(f"**Ação:** {row['Acao']}")
-                        st.write(f"**Detalhes:** {row['Detalhes']}")
-                    
-                    with col_img:
-                        foto_b64 = row.get('Foto_Path', "")
-                        if foto_b64 and len(str(foto_b64)) > 100:
-                            st.image(base64.b64decode(foto_b64), use_container_width=True)
+                        st.write(f"**Obs:** {row['Detalhes']}")
+                    with col2:
+                        f_b64 = row.get('Foto_Path', "")
+                        if f_b64 and len(str(f_b64)) > 100:
+                            st.image(base64.b64decode(f_b64), use_container_width=True)
                         else:
                             st.write("Sem foto.")
     except Exception as e:
-        st.error(f"Erro ao ler histórico: {e}")
+        st.error(f"Erro no histórico: {e}")
