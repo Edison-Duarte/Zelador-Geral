@@ -24,17 +24,24 @@ sheet_id = st.secrets["spreadsheet"]["id"]
 sh = client.open_by_key(sheet_id)
 worksheet = sh.get_worksheet(0)
 
-# --- FUNÇÃO PARA UPLOAD NO DRIVE ---
+# --- FUNÇÃO PARA UPLOAD NO DRIVE AJUSTADA ---
 def upload_para_drive(file_buffer, file_name):
     if file_buffer is None:
         return ""
     try:
-        file_metadata = {'name': file_name}
+        # Pega o ID da pasta que você colocou nos Secrets
+        folder_id = st.secrets["spreadsheet"]["folder_id"]
+        
+        # Metadata agora inclui a pasta pai (parents)
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id] 
+        }
+        
         media = MediaIoBaseUpload(io.BytesIO(file_buffer.getvalue()), mimetype='image/jpeg')
-        # Faz o upload
         drive_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         file_id = drive_file.get('id')
-        # Permite que qualquer pessoa com o link veja (necessário para o Streamlit exibir)
+        
         drive_service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'viewer'}).execute()
         return file_id
     except Exception as e:
