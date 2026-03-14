@@ -29,24 +29,44 @@ def upload_para_drive(file_buffer, file_name):
     if file_buffer is None:
         return ""
     try:
-        # Pega o ID da pasta que você colocou nos Secrets
-        folder_id = st.secrets["spreadsheet"]["folder_id"]
+        # Pega o ID e remove qualquer espaço ou quebra de linha acidental
+        f_id_dest = st.secrets["spreadsheet"]["folder_id"].strip()
         
-        # Metadata agora inclui a pasta pai (parents)
         file_metadata = {
             'name': file_name,
-            'parents': [folder_id] 
+            'parents': [f_id_dest]
         }
         
-        media = MediaIoBaseUpload(io.BytesIO(file_buffer.getvalue()), mimetype='image/jpeg')
-        drive_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        file_id = drive_file.get('id')
+        # Converte para o formato de upload
+        media = MediaIoBaseUpload(
+            io.BytesIO(file_buffer.getvalue()), 
+            mimetype='image/jpeg', 
+            resumable=True
+        )
         
-        drive_service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'viewer'}).execute()
+        # Cria o arquivo na pasta destino
+        file = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id'
+        ).execute()
+        
+        file_id = file.get('id')
+        
+        # Tenta tornar público para o App ler. Se falhar, o ID ainda foi gerado.
+        try:
+            drive_service.permissions().create(
+                fileId=file_id, 
+                body={'type': 'anyone', 'role': 'viewer'}
+            ).execute()
+        except:
+            pass
+            
         return file_id
     except Exception as e:
-        st.error(f"Erro no upload da foto: {e}")
-        return ""
+        # Se der erro 404 aqui, o ID da pasta nos Secrets ainda está errado ou sem permissão
+        st.error(f"Erro no Drive: {e}")
+        return "ERRO"
 
 # --- CONFIGURAÇÃO ---
 AREAS = {
