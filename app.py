@@ -7,7 +7,7 @@ import base64
 from io import BytesIO
 from PIL import Image, ImageOps
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA (DEVE SER A PRIMEIRA LINHA DO STREAMLIT) ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
     page_title="Zelador Virtual", 
     layout="wide", 
@@ -62,8 +62,8 @@ AREAS = {
     }
 }
 
-# --- 5. INTERFACE PRINCIPAL ---
-st.title("🏛️ Zelador Virtual") # Título que aparece no topo da página
+# --- 5. INTERFACE ---
+st.title("🏛️ Zelador Virtual")
 
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
@@ -93,9 +93,13 @@ if menu == "Nova Inspeção":
                         with c2:
                             obs = st.text_input("Obs:", key=f"ob_{item}")
                         
-                        # Câmera integrada para o celular
-                        st.write(f"📸 Capturar imagem de: {item}")
-                        foto = st.camera_input(f"Foto: {item}", key=f"cam_{item}")
+                        # --- NOVO SELETOR DE ORIGEM DA FOTO ---
+                        origem_foto = st.radio("Como deseja enviar a foto?", ["Câmera", "Galeria"], key=f"origem_{item}", horizontal=True)
+                        
+                        if origem_foto == "Câmera":
+                            foto = st.camera_input(f"Capturar {item}", key=f"cam_{item}")
+                        else:
+                            foto = st.file_uploader(f"Selecionar arquivo de {item}", type=["jpg", "jpeg", "png"], key=f"file_{item}")
                     
                     respostas_temp.append({
                         "Item": item, "Status": status, "Acao": acao, "Detalhes": obs, "Foto": foto
@@ -105,7 +109,7 @@ if menu == "Nova Inspeção":
                 if not nome_usuario:
                     st.error("⚠️ Por favor, preencha o nome do inspetor.")
                 else:
-                    with st.spinner("Gravando dados na nuvem..."):
+                    with st.spinner("Gravando dados e processando imagens..."):
                         dados_para_salvar = []
                         for r in respostas_temp:
                             foto_texto = preparar_foto_para_planilha(r["Foto"])
@@ -118,7 +122,7 @@ if menu == "Nova Inspeção":
                         
                         try:
                             worksheet.append_rows(dados_para_salvar)
-                            st.success("✅ Tudo salvo com sucesso!")
+                            st.success("✅ Inspeção salva com sucesso!")
                             st.balloons()
                         except Exception as e:
                             st.error(f"Erro ao salvar: {e}")
@@ -129,7 +133,6 @@ elif menu == "Histórico":
         records = worksheet.get_all_records()
         if records:
             df = pd.DataFrame(records)
-            # Mostra do mais recente para o mais antigo
             for idx, row in df.iloc[::-1].iterrows():
                 emoji = "✅" if row['Status'] == "Conforme" else "🔴"
                 with st.expander(f"{emoji} {row['Data']} - {row['Item']} ({row['Subdivisao']})"):
@@ -137,13 +140,13 @@ elif menu == "Histórico":
                     with col1:
                         st.write(f"**Inspetor:** {row['Usuario']}")
                         st.write(f"**Local:** {row['Area']} > {row['Subdivisao']}")
-                        st.write(f"**Ação Sugerida:** {row['Acao']}")
-                        st.write(f"**Observações:** {row['Detalhes']}")
+                        st.write(f"**Ação:** {row['Acao']}")
+                        st.write(f"**Obs:** {row['Detalhes']}")
                     with col2:
                         f_b64 = row.get('Foto_Path', "")
                         if f_b64 and len(str(f_b64)) > 100:
                             st.image(base64.b64decode(f_b64), use_container_width=True)
                         else:
-                            st.info("Sem registro fotográfico.")
+                            st.info("Sem foto registrada.")
     except Exception as e:
-        st.error(f"Não foi possível carregar o histórico: {e}")
+        st.error(f"Erro ao carregar histórico: {e}")
