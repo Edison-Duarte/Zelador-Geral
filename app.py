@@ -62,7 +62,7 @@ AREAS = {
     }
 }
 
-# --- 5. INTERFACE ---
+# --- 5. INTERFACE PRINCIPAL ---
 st.title("🏛️ Zelador Virtual")
 
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
@@ -93,13 +93,11 @@ if menu == "Nova Inspeção":
                         with c2:
                             obs = st.text_input("Obs:", key=f"ob_{item}")
                         
-                        # --- NOVO SELETOR DE ORIGEM DA FOTO ---
-                        origem_foto = st.radio("Como deseja enviar a foto?", ["Câmera", "Galeria"], key=f"origem_{item}", horizontal=True)
-                        
+                        origem_foto = st.radio("Origem da foto:", ["Câmera", "Galeria"], key=f"origem_{item}", horizontal=True)
                         if origem_foto == "Câmera":
                             foto = st.camera_input(f"Capturar {item}", key=f"cam_{item}")
                         else:
-                            foto = st.file_uploader(f"Selecionar arquivo de {item}", type=["jpg", "jpeg", "png"], key=f"file_{item}")
+                            foto = st.file_uploader(f"Anexar de {item}", type=["jpg", "jpeg", "png"], key=f"file_{item}")
                     
                     respostas_temp.append({
                         "Item": item, "Status": status, "Acao": acao, "Detalhes": obs, "Foto": foto
@@ -107,46 +105,76 @@ if menu == "Nova Inspeção":
 
             if st.button("🚀 FINALIZAR E SALVAR", use_container_width=True):
                 if not nome_usuario:
-                    st.error("⚠️ Por favor, preencha o nome do inspetor.")
+                    st.error("⚠️ Preencha o nome do inspetor.")
                 else:
-                    with st.spinner("Gravando dados e processando imagens..."):
+                    with st.spinner("Gravando dados..."):
                         dados_para_salvar = []
+                        agora = datetime.now().strftime("%d/%m/%Y %H:%M")
                         for r in respostas_temp:
                             foto_texto = preparar_foto_para_planilha(r["Foto"])
-                            
                             dados_para_salvar.append([
-                                datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                nome_usuario, area_sel, sub_area,
+                                agora, nome_usuario, area_sel, sub_area,
                                 r["Item"], r["Status"], r["Acao"], r["Detalhes"], foto_texto
                             ])
                         
-                        try:
-                            worksheet.append_rows(dados_para_salvar)
-                            st.success("✅ Inspeção salva com sucesso!")
-                            st.balloons()
-                        except Exception as e:
-                            st.error(f"Erro ao salvar: {e}")
+                        worksheet.append_rows(dados_para_salvar)
+                        st.success("✅ Inspeção salva!")
+                        st.balloons()
 
 elif menu == "Histórico":
     st.header("📂 Histórico de Inspeções")
+    
     try:
         records = worksheet.get_all_records()
         if records:
             df = pd.DataFrame(records)
-            for idx, row in df.iloc[::-1].iterrows():
-                emoji = "✅" if row['Status'] == "Conforme" else "🔴"
-                with st.expander(f"{emoji} {row['Data']} - {row['Item']} ({row['Subdivisao']})"):
-                    col1, col2 = st.columns([2, 1])
-                    with col1:
-                        st.write(f"**Inspetor:** {row['Usuario']}")
-                        st.write(f"**Local:** {row['Area']} > {row['Subdivisao']}")
-                        st.write(f"**Ação:** {row['Acao']}")
-                        st.write(f"**Obs:** {row['Detalhes']}")
-                    with col2:
-                        f_b64 = row.get('Foto_Path', "")
-                        if f_b64 and len(str(f_b64)) > 100:
-                            st.image(base64.b64decode(f_b64), use_container_width=True)
-                        else:
-                            st.info("Sem foto registrada.")
+            
+            # Converter a coluna 'Data' para o formato datetime para filtrar
+            df['Data_dt'] = pd.to_datetime(df['Data'], format="%d/%m/%Y %H:%M", errors='coerce')
+            
+            # --- FILTROS NO TOPO DO HISTÓRICO ---
+            with st.expander("🔍 Filtros de Busca", expanded=True):
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    data_inicio = st.date_input("Data Início", value=datetime.now().replace(day=1))
+                with c2:
+                    data_fim = st.date_input("Data Fim", value=datetime.now())
+                with c3:
+                    filtro_status = st.multiselect("Filtrar Status:", ["Conforme", "Não Conforme"], default=["Conforme", "Não Conforme"])
+            
+            # Aplicar filtros
+            mask = (df['Data_dt'].dt.date >= data_inicio) & \
+                   (df['Data_dt'].dt.date <= data_fim) & \
+                   (df['Status'].isin(filtro_status))
+            df_filtrado = df.loc[mask]
+
+            if df_filtrado.empty:
+                st.info("Nenhum registro encontrado para os filtros selecionados.")
+            else:
+                st.write(f"Exibindo **{len(df_filtrado)}** registros:")
+                
+                # Listar do mais recente para o mais antigo
+                for idx, row in df_filtrado.iloc[::-1].iterrows():
+                    cor = "green" if row['Status'] == "Conforme" else "red"
+                    emoji = "✅" if row['Status'] == "Conforme" else "🔴"
+                    
+                    with st.expander(f"{emoji} {row['Data']} | {row['Area']} - {row['Item']}"):
+                        col_info, col_img = st.columns([2, 1])
+                        with col_info:
+                            st.markdown(f"**Status:** :{cor}[{row['Status']}]")
+                            st.write(f"**Inspetor:** {row['Usuario']}")
+                            st.write(f"**Subdivisão:** {row['Subdivisao']}")
+                            st.write(f"**Ação Necessária:** {row['Acao']}")
+                            st.write(f"**Observações:** {row['Detalhes']}")
+                        
+                        with col_img:
+                            f_b64 = row.get('Foto_Path', "")
+                            if f_b64 and len(str(f_b64)) > 100:
+                                st.image(base64.b64decode(f_b64), use_container_width=True)
+                            else:
+                                st.caption("Sem foto disponível.")
+        else:
+            st.info("A planilha está vazia.")
+            
     except Exception as e:
         st.error(f"Erro ao carregar histórico: {e}")
