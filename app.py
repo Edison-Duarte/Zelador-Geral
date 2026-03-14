@@ -29,22 +29,22 @@ def upload_para_drive(file_buffer, file_name):
     if file_buffer is None:
         return ""
     try:
-        # Pega o ID e remove qualquer espaço ou quebra de linha acidental
-        f_id_dest = st.secrets["spreadsheet"]["folder_id"].strip()
+        # Limpa o ID de qualquer sujeira de texto
+        f_id_dest = st.secrets["spreadsheet"]["folder_id"].strip().replace('"', '').replace("'", "")
         
         file_metadata = {
             'name': file_name,
             'parents': [f_id_dest]
         }
         
-        # Converte para o formato de upload
+        # Prepara o arquivo
         media = MediaIoBaseUpload(
             io.BytesIO(file_buffer.getvalue()), 
             mimetype='image/jpeg', 
             resumable=True
         )
         
-        # Cria o arquivo na pasta destino
+        # Tenta criar o arquivo
         file = drive_service.files().create(
             body=file_metadata, 
             media_body=media, 
@@ -53,7 +53,7 @@ def upload_para_drive(file_buffer, file_name):
         
         file_id = file.get('id')
         
-        # Tenta tornar público para o App ler. Se falhar, o ID ainda foi gerado.
+        # Torna a imagem visível para o App
         try:
             drive_service.permissions().create(
                 fileId=file_id, 
@@ -64,9 +64,10 @@ def upload_para_drive(file_buffer, file_name):
             
         return file_id
     except Exception as e:
-        # Se der erro 404 aqui, o ID da pasta nos Secrets ainda está errado ou sem permissão
-        st.error(f"Erro no Drive: {e}")
-        return "ERRO"
+        # Isso vai imprimir o erro detalhado no seu App para investigarmos
+        st.error(f"Tentativa de upload falhou. Pasta ID usada: {f_id_dest}")
+        st.error(f"Erro detalhado: {e}")
+        return "ERRO_TECNICO"
 
 # --- CONFIGURAÇÃO ---
 AREAS = {
