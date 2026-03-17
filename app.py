@@ -68,12 +68,29 @@ def formatar_corpo_email(dataframe):
         corpo += f"{simbolo} {r['Item']}: {r['Status']}\n   Local: {r['Area']} ({r['Subdivisao']})\n   Obs: {r['Detalhes']}\n\n"
     return corpo
 
-# --- 5. DADOS ---
+# --- 5. ESTRUTURA DE DADOS ATUALIZADA ---
 AREAS = {
-    "Sede Social": {"senha": "SSICS", "subs": ["Terraço", "1º Andar", "2º Andar"], "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]},
-    "Operacional": {"senha": "OPICS", "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes"], "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]}
+    "Sede Social": {
+        "senha": "SSICS", 
+        "subs": ["Terraço", "1º Andar", "2º Andar"], 
+        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
+    },
+    "Operacional": {
+        "senha": "OPICS", 
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Pátio Novo"],
+        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
+    },
+    "Flats": {
+        "senha": "FLATS",
+        "subs": [
+            "Bloco A - Térreo", "Bloco A - 1º Andar", "Bloco A - 2º Andar", "Bloco A - 3º Andar", "Bloco A - 4º Andar", "Bloco A - Terraço", "Bloco A - Garagem",
+            "Bloco B - Térreo", "Bloco B - 1º Andar", "Bloco B - 2º Andar", "Bloco B - 3º Andar", "Bloco B - 4º Andar", "Bloco B - Terraço", "Bloco B - Garagem"
+        ],
+        "itens": ["Lâmpadas/Iluminação", "Piso/Escadarias", "Pintura", "Limpeza", "Interfones", "Extintores"]
+    }
 }
 
+# --- 6. INTERFACE ---
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
 if menu == "Nova Inspeção":
@@ -82,9 +99,11 @@ if menu == "Nova Inspeção":
     area_sel = st.selectbox("Área Principal:", ["Selecione..."] + list(AREAS.keys()))
 
     if area_sel != "Selecione...":
-        senha_in = st.text_input("Senha:", type="password")
+        senha_in = st.text_input("Senha da Área:", type="password")
         if senha_in == AREAS[area_sel]["senha"]:
             sub_area = st.selectbox("Subdivisão:", AREAS[area_sel]["subs"])
+            st.divider()
+            
             respostas_temp = []
             for item in AREAS[area_sel]["itens"]:
                 with st.container(border=True):
@@ -111,11 +130,10 @@ if menu == "Nova Inspeção":
                         worksheet.append_rows(dados_salvar)
                         st.success("✅ Salvo!")
                         st.divider()
-                        st.subheader("📦 Compartilhar esta Inspeção:")
-                        c1, c2, c3 = st.columns(3)
                         df_atual = pd.DataFrame(dados_salvar, columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Acao", "Detalhes", "Foto_Path"])
+                        c1, c2, c3 = st.columns(3)
                         c1.download_button("📥 PDF", gerar_pdf(df_atual), "inspecao.pdf")
-                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Inspeção realizada com sucesso.')}")
+                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Inspeção realizada.')}")
                         c3.link_button("📧 E-mail", f"mailto:?subject=Inspeção&body={urllib.parse.quote(formatar_corpo_email(df_atual))}")
 
 elif menu == "Histórico":
@@ -126,52 +144,34 @@ elif menu == "Histórico":
             df = pd.DataFrame(records)
             df['Data_dt'] = pd.to_datetime(df['Data'], format="%d/%m/%Y %H:%M", errors='coerce')
             
-            with st.expander("🔍 Filtros de Busca e Relatório", expanded=True):
-                # Primeira linha de filtros
+            with st.expander("🔍 Filtros Avançados", expanded=True):
                 f1, f2, f3 = st.columns(3)
                 with f1: data_ini = st.date_input("Início", datetime.now().replace(day=1))
                 with f2: data_fim = st.date_input("Fim", datetime.now())
                 with f3: f_status = st.multiselect("Status", ["Conforme", "Não Conforme"], default=["Conforme", "Não Conforme"])
                 
-                # Segunda linha de filtros (Áreas e Subdivisões)
                 f4, f5 = st.columns(2)
-                with f4:
-                    f_area = st.multiselect("Filtrar Área Principal:", list(AREAS.keys()), default=list(AREAS.keys()))
+                with f4: f_area = st.multiselect("Áreas:", list(AREAS.keys()), default=list(AREAS.keys()))
                 with f5:
-                    # Subdivisões dinâmicas baseadas nas áreas escolhidas
                     opcoes_subs = []
-                    for a in f_area:
-                        opcoes_subs.extend(AREAS[a]["subs"])
-                    f_sub = st.multiselect("Filtrar Subdivisões:", opcoes_subs, default=opcoes_subs)
+                    for a in f_area: opcoes_subs.extend(AREAS[a]["subs"])
+                    f_sub = st.multiselect("Subdivisões:", opcoes_subs, default=opcoes_subs)
 
-                # Aplicação dos filtros
-                mask = (df['Data_dt'].dt.date >= data_ini) & \
-                       (df['Data_dt'].dt.date <= data_fim) & \
-                       (df['Status'].isin(f_status)) & \
-                       (df['Area'].isin(f_area)) & \
-                       (df['Subdivisao'].isin(f_sub))
-                df_f = df.loc[mask]
+                df_f = df[(df['Data_dt'].dt.date >= data_ini) & (df['Data_dt'].dt.date <= data_fim) & (df['Status'].isin(f_status)) & (df['Area'].isin(f_area)) & (df['Subdivisao'].isin(f_sub))]
 
                 if not df_f.empty:
                     st.divider()
-                    st.write(f"📊 **{len(df_f)}** itens encontrados.")
                     c_pdf, c_wpp, c_mail = st.columns(3)
-                    c_pdf.download_button("📥 PDF Filtrado", gerar_pdf(df_f), "relatorio_zeladoria.pdf")
-                    msg_w = f"Relatório de Zeladoria: {len(df_f)} itens encontrados no período selecionado."
-                    c_wpp.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote(msg_w)}")
-                    c_mail.link_button("📧 E-mail Detalhado", f"mailto:?subject=Relatorio&body={urllib.parse.quote(formatar_corpo_email(df_f))}")
+                    c_pdf.download_button("📥 PDF Filtrado", gerar_pdf(df_f), "relatorio.pdf")
+                    c_wpp.link_button("📲 WhatsApp", f"https://wa.me/?text=Relatorio")
+                    c_mail.link_button("📧 E-mail", f"mailto:?subject=Relatorio&body={urllib.parse.quote(formatar_corpo_email(df_f))}")
 
-            # Exibição dos cards
             for _, row in df_f.iloc[::-1].iterrows():
                 emoji = "✅" if row['Status'] == "Conforme" else "🔴"
-                with st.expander(f"{emoji} {row['Data']} - {row['Area']} ({row['Subdivisao']}) - {row['Item']}"):
-                    col_txt, col_img = st.columns([2, 1])
-                    with col_txt:
-                        st.write(f"**Inspetor:** {row['Usuario']}")
-                        st.write(f"**Status:** {row['Status']}")
-                        st.write(f"**Obs:** {row['Detalhes']}")
-                    with col_img:
+                with st.expander(f"{emoji} {row['Data']} - {row['Area']} - {row['Subdivisao']}"):
+                    col_t, col_i = st.columns([2, 1])
+                    with col_t: st.write(f"**Item:** {row['Item']}\n**Inspetor:** {row['Usuario']}\n**Obs:** {row['Detalhes']}")
+                    with col_i:
                         f_b64 = row.get('Foto_Path', "")
-                        if f_b64 and len(str(f_b64)) > 100:
-                            st.image(base64.b64decode(f_b64), use_container_width=True)
-    except Exception as e: st.error(f"Erro ao carregar histórico: {e}")
+                        if f_b64 and len(str(f_b64)) > 100: st.image(base64.b64decode(f_b64), use_container_width=True)
+    except Exception as e: st.error(f"Erro: {e}")
