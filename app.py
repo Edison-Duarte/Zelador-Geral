@@ -136,9 +136,14 @@ if menu == "Nova Inspeção":
 elif menu == "Histórico":
     st.subheader("📂 Consulta e Filtros")
     try:
-        records = worksheet.get_all_records()
-        if records:
-            df = pd.DataFrame(records)
+        # Puxa todos os valores brutos para garantir que nada fique de fora
+        dados_brutos = worksheet.get_all_values()
+        
+        if len(dados_brutos) > 1:
+            # Transforma em DataFrame usando a primeira linha como cabeçalho
+            df = pd.DataFrame(dados_brutos[1:], columns=dados_brutos[0])
+            
+            # Converte a coluna de data para garantir o filtro
             df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
 
             # --- FILTROS ---
@@ -149,34 +154,51 @@ elif menu == "Histórico":
                 with c3: f_status = st.multiselect("Status:", ["Conforme", "Não Conforme"], default=["Conforme", "Não Conforme"])
                 
                 c4, c5 = st.columns(2)
-                with c4: f_area = st.multiselect("Filtrar Áreas:", list(AREAS.keys()), default=list(AREAS.keys()))
+                # Pega as áreas únicas que REALMENTE existem na planilha para evitar erro
+                areas_na_planilha = df['Area'].unique().tolist()
+                with c4: f_area = st.multiselect("Filtrar Áreas:", areas_na_planilha, default=areas_na_planilha)
                 with c5:
-                    op_subs = []
-                    for a in f_area: op_subs.extend(AREAS[a]["subs"])
-                    f_sub = st.multiselect("Filtrar Subdivisões:", op_subs, default=op_subs)
+                    subs_na_planilha = df[df['Area'].isin(f_area)]['Subdivisao'].unique().tolist()
+                    f_sub = st.multiselect("Filtrar Subdivisões:", subs_na_planilha, default=subs_na_planilha)
 
-            mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & \
-                   (df['Status'].isin(f_status)) & (df['Area'].isin(f_area)) & (df['Subdivisao'].isin(f_sub))
+            # APLICAÇÃO DO FILTRO
+            mask = (df['Data_dt'].dt.date >= d_ini) & \
+                   (df['Data_dt'].dt.date <= d_fim) & \
+                   (df['Status'].isin(f_status)) & \
+                   (df['Area'].isin(f_area)) & \
+                   (df['Subdivisao'].isin(f_sub))
+            
             df_f = df.loc[mask]
 
             if not df_f.empty:
                 st.write(f"🔍 **{len(df_f)}** itens encontrados.")
+                
+                # Botões de exportação
                 col1, col2, col3 = st.columns(3)
-                col1.download_button("📥 PDF Geral", gerar_pdf(df_f), "historico.pdf")
+                col1.download_button("📥 PDF Geral", gerar_pdf(df_f), "historico_completo.pdf")
                 col2.link_button("📲 WhatsApp", "https://wa.me/")
                 col3.link_button("📧 E-mail", f"mailto:?subject=Relatorio&body={urllib.parse.quote(formatar_corpo_email(df_f))}")
                 
                 st.divider()
+                
+                # Exibição dos Cards (do mais novo para o mais antigo)
                 for _, row in df_f.iloc[::-1].iterrows():
                     cor = "🟢" if row['Status'] == "Conforme" else "🔴"
                     with st.expander(f"{cor} {row['Data']} - {row['Area']} ({row['Subdivisao']})"):
                         st.write(f"**Item:** {row['Item']} | **Inspetor:** {row['Usuario']}")
-                        st.write(f"**Obs:** {row['Detalhes']}")
-                        if row['Foto'] and len(str(row['Foto'])) > 100:
-                            st.image(base64.b64decode(row['Foto']), width=300)
+                        st.write(f"**Ação:** {row['Acao']} | **Obs:** {row['Detalhes']}")
+                        
+                        # Verifica se há foto salva
+                        foto_data = row.get('Foto_Path', row.get('Foto', ""))
+                        if foto_data and len(str(foto_data)) > 100:
+                            try:
+                                st.image(base64.b64decode(foto_data), width=300)
+                            except:
+                                st.warning("Erro ao carregar esta imagem.")
             else:
-                st.info("Nenhum dado para os filtros selecionados.")
+                st.info("Nenhum registro encontrado para os filtros selecionados.")
         else:
-            st.info("Planilha vazia.")
+            st.info("A planilha ainda não possui registros além do cabeçalho.")
+            
     except Exception as e:
-        st.error(f"Erro ao carregar: {e}")
+        st.error(f"Erro ao carregar dados da planilha: {e}")
