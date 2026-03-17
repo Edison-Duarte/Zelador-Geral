@@ -47,7 +47,7 @@ def gerar_pdf(dataframe):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(190, 10, "Relatório de Zeladoria", ln=True, align="C")
+    pdf.cell(190, 10, "Relatorio de Zeladoria", ln=True, align="C")
     pdf.set_font("Arial", "", 10)
     pdf.cell(190, 10, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
     pdf.ln(10)
@@ -57,14 +57,14 @@ def gerar_pdf(dataframe):
         pdf.set_font("Arial", "B", 11)
         pdf.cell(190, 8, f"Item: {row['Item']} - {row['Status']}", ln=True, fill=True)
         pdf.set_font("Arial", "", 10)
-        pdf.multi_cell(190, 6, f"Data: {row['Data']}\nLocal: {row['Area']} ({row['Subdivisao']})\nInspetor: {row['Usuario']}\nAção: {row['Acao']}\nObs: {row['Detalhes']}")
+        pdf.multi_cell(190, 6, f"Data: {row['Data']}\nLocal: {row['Area']} ({row['Subdivisao']})\nInspetor: {row['Usuario']}\nAcao: {row['Acao']}\nObs: {row['Detalhes']}")
         pdf.ln(5)
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 def formatar_corpo_email(dataframe):
-    corpo = "RELATÓRIO DE ZELADORIA\n" + "-"*30 + "\n\n"
+    corpo = "RELATORIO DE ZELADORIA\n" + "-"*30 + "\n\n"
     for _, r in dataframe.iterrows():
-        simbolo = " [!] " if r['Status'] == "Não Conforme" else " [OK] "
+        simbolo = " [!] " if r['Status'] == "Nao Conforme" else " [OK] "
         corpo += f"{simbolo} {r['Item']}: {r['Status']}\n   Local: {r['Area']} ({r['Subdivisao']})\n   Obs: {r['Detalhes']}\n\n"
     return corpo
 
@@ -72,29 +72,34 @@ def formatar_corpo_email(dataframe):
 AREAS = {
     "Sede Social": {
         "senha": "SSICS", 
-        "subs": ["Terraço (bares, cozinha, varanda, vestiários, salão)", "1º Andar", "2º Andar", "Refeitório","Mirante"], 
-        "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
+        "subs": ["Terraco", "1º Andar", "2º Andar"], 
+        "itens": ["Lampadas", "Piso", "Corrimoes", "Janelas", "Limpeza", "Pintura"]
     },
     "Operacional": {
         "senha": "OPICS", 
-        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Pátio", "Pátio Novo"],
-        "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo", "Vestiários", "Almoxarifado"],
+        "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]
     },
     "Flats": {
         "senha": "FLATS",
         "subs": [
-            "Bloco A - Térreo", "Bloco A - 1º Andar", "Bloco A - 2º Andar", "Bloco A - 3º Andar", "Bloco A - 4º Andar", "Bloco A - Terraço", "Bloco A - Garagem",
-            "Bloco B - Térreo", "Bloco B - 1º Andar", "Bloco B - 2º Andar", "Bloco B - 3º Andar", "Bloco B - 4º Andar", "Bloco B - Terraço", "Bloco B - Garagem"
+            "Bloco A - Terreo", "Bloco A - 1º Andar", "Bloco A - 2º Andar", "Bloco A - 3º Andar", "Bloco A - 4º Andar", "Bloco A - Terraco", "Bloco A - Garagem",
+            "Bloco B - Terreo", "Bloco B - 1º Andar", "Bloco B - 2º Andar", "Bloco B - 3º Andar", "Bloco B - 4º Andar", "Bloco B - Terraco", "Bloco B - Garagem"
         ],
-        "itens": ["Lâmpadas/Iluminação", "Piso/Escadarias", "Pintura", "Limpeza", "Interfones", "Extintores"]
+        "itens": ["Lampadas/Iluminacao", "Piso/Escadarias", "Pintura", "Limpeza", "Interfones", "Extintores"]
+    },
+    "Predios ADM": {
+        "senha": "ADMICS",
+        "subs": ["Secretaria Nautica", "Administracao Marina ICS", "1º andar (RH/TI)", "Predio Sala Radio"],
+        "itens": ["Ar-condicionado", "Iluminacao", "Limpeza", "Mobiliario", "Pintura", "Portas/Vidros"]
     }
 }
 
 # --- 6. INTERFACE ---
+st.title("🏛️ Zelador Virtual")
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
 if menu == "Nova Inspeção":
-    st.title("🏛️ Nova Inspeção")
     nome_usuario = st.text_input("Nome do Inspetor:")
     area_sel = st.selectbox("Área Principal:", ["Selecione..."] + list(AREAS.keys()))
 
@@ -133,11 +138,11 @@ if menu == "Nova Inspeção":
                         df_atual = pd.DataFrame(dados_salvar, columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Acao", "Detalhes", "Foto_Path"])
                         c1, c2, c3 = st.columns(3)
                         c1.download_button("📥 PDF", gerar_pdf(df_atual), "inspecao.pdf")
-                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Inspeção realizada.')}")
-                        c3.link_button("📧 E-mail", f"mailto:?subject=Inspeção&body={urllib.parse.quote(formatar_corpo_email(df_atual))}")
+                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Inspecao realizada.')}")
+                        c3.link_button("📧 E-mail", f"mailto:?subject=Inspecao&body={urllib.parse.quote(formatar_corpo_email(df_atual))}")
 
 elif menu == "Histórico":
-    st.title("📂 Histórico Cloud")
+    st.header("📂 Histórico Cloud")
     try:
         records = worksheet.get_all_records()
         if records:
