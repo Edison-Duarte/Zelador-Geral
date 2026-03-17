@@ -72,12 +72,12 @@ def formatar_corpo_email(dataframe):
 AREAS = {
     "Sede Social": {
         "senha": "SSICS", 
-        "subs": ["Terraço", "1º Andar", "2º Andar"], 
+        "subs": ["Terraço (bares, cozinha, varanda, vestiários, salão)", "1º Andar", "2º Andar", "Refeitório","Mirante"], 
         "itens": ["Lâmpadas", "Piso", "Corrimões", "Janelas", "Limpeza", "Pintura"]
     },
     "Operacional": {
         "senha": "OPICS", 
-        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Pátio Novo"],
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Pátio", "Pátio Novo"],
         "itens": ["Piso", "Caixas de energia", "Lâmpadas/Iluminação", "Estrutura", "Limpeza", "Pintura"]
     },
     "Flats": {
