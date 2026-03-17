@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import base64
 from io import BytesIO
 from PIL import Image, ImageOps
@@ -12,7 +12,13 @@ import urllib.parse
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Zelador Virtual", layout="wide", page_icon="🏛️")
 
-# --- 2. CONEXÃO GOOGLE SHEETS ---
+# --- 2. CONFIGURAÇÃO DE FUSO HORÁRIO (BRASÍLIA) ---
+def get_data_hora_brasil():
+    # Cria o fuso horário de Brasília (UTC-3)
+    fuso_brasil = timezone(timedelta(hours=-3))
+    return datetime.now(fuso_brasil)
+
+# --- 3. CONEXÃO GOOGLE SHEETS ---
 def get_gspread_client():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -30,7 +36,7 @@ sheet_id = st.secrets["spreadsheet"]["id"]
 sh = client.open_by_key(sheet_id)
 worksheet = sh.get_worksheet(0)
 
-# --- 3. PROCESSAMENTO DE IMAGEM ---
+# --- 4. PROCESSAMENTO DE IMAGEM ---
 def preparar_foto_para_planilha(foto_file):
     if foto_file is None: return ""
     try:
@@ -42,14 +48,15 @@ def preparar_foto_para_planilha(foto_file):
         return base64.b64encode(buffer.getvalue()).decode()
     except: return ""
 
-# --- 4. FUNÇÕES DE RELATÓRIO ---
+# --- 5. FUNÇÕES DE RELATÓRIO ---
 def gerar_pdf(dataframe):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     pdf.cell(190, 10, "Relatorio de Zeladoria", ln=True, align="C")
     pdf.set_font("Arial", "", 10)
-    pdf.cell(190, 10, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+    agora_br = get_data_hora_brasil().strftime('%d/%m/%Y %H:%M')
+    pdf.cell(190, 10, f"Gerado em: {agora_br}", ln=True, align="C")
     pdf.ln(10)
 
     for _, row in dataframe.iterrows():
@@ -62,13 +69,14 @@ def gerar_pdf(dataframe):
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 def formatar_corpo_email(dataframe):
-    corpo = "RELATORIO DE ZELADORIA\n" + "-"*30 + "\n\n"
+    agora_br = get_data_hora_brasil().strftime('%d/%m/%Y %H:%M')
+    corpo = f"RELATORIO DE ZELADORIA - Gerado em {agora_br}\n" + "-"*30 + "\n\n"
     for _, r in dataframe.iterrows():
         simbolo = " [!] " if r['Status'] == "Nao Conforme" else " [OK] "
-        corpo += f"{simbolo} {r['Item']}: {r['Status']}\n   Local: {r['Area']} ({r['Subdivisao']})\n   Obs: {r['Detalhes']}\n\n"
+        corpo += f"{simbolo} {r['Item']}: {r['Status']}\n   Local: {r['Area']} ({r['Subdivisao']})\n   Data: {r['Data']}\n   Obs: {r['Detalhes']}\n\n"
     return corpo
 
-# --- 5. ESTRUTURA DE DADOS ATUALIZADA ---
+# --- 6. ESTRUTURA DE DADOS ---
 AREAS = {
     "Sede Social": {
         "senha": "SSICS", 
@@ -77,7 +85,7 @@ AREAS = {
     },
     "Operacional": {
         "senha": "OPICS", 
-        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo", "Vestiários", "Almoxarifado"],
+        "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo"],
         "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]
     },
     "Flats": {
@@ -95,7 +103,7 @@ AREAS = {
     }
 }
 
-# --- 6. INTERFACE ---
+# --- 7. INTERFACE ---
 st.title("🏛️ Zelador Virtual")
 menu = st.sidebar.selectbox("Navegação", ["Nova Inspeção", "Histórico"])
 
@@ -128,17 +136,17 @@ if menu == "Nova Inspeção":
                 else:
                     with st.spinner("Gravando..."):
                         dados_salvar = []
-                        agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+                        agora_br = get_data_hora_brasil().strftime("%d/%m/%Y %H:%M")
                         for r in respostas_temp:
                             f_txt = preparar_foto_para_planilha(r["Foto"])
-                            dados_salvar.append([agora, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Acao"], r["Detalhes"], f_txt])
+                            dados_salvar.append([agora_br, nome_usuario, area_sel, sub_area, r["Item"], r["Status"], r["Acao"], r["Detalhes"], f_txt])
                         worksheet.append_rows(dados_salvar)
-                        st.success("✅ Salvo!")
+                        st.success("✅ Salvo com sucesso!")
                         st.divider()
                         df_atual = pd.DataFrame(dados_salvar, columns=["Data", "Usuario", "Area", "Subdivisao", "Item", "Status", "Acao", "Detalhes", "Foto_Path"])
                         c1, c2, c3 = st.columns(3)
                         c1.download_button("📥 PDF", gerar_pdf(df_atual), "inspecao.pdf")
-                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Inspecao realizada.')}")
+                        c2.link_button("📲 WhatsApp", f"https://wa.me/?text={urllib.parse.quote('Inspecao realizada com sucesso.')}")
                         c3.link_button("📧 E-mail", f"mailto:?subject=Inspecao&body={urllib.parse.quote(formatar_corpo_email(df_atual))}")
 
 elif menu == "Histórico":
@@ -147,12 +155,16 @@ elif menu == "Histórico":
         records = worksheet.get_all_records()
         if records:
             df = pd.DataFrame(records)
-            df['Data_dt'] = pd.to_datetime(df['Data'], format="%d/%m/%Y %H:%M", errors='coerce')
+            # Garante que a data seja lida no formato brasileiro Dia/Mes/Ano
+            df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
             
             with st.expander("🔍 Filtros Avançados", expanded=True):
                 f1, f2, f3 = st.columns(3)
-                with f1: data_ini = st.date_input("Início", datetime.now().replace(day=1))
-                with f2: data_fim = st.date_input("Fim", datetime.now())
+                hoje_br = get_data_hora_brasil().date()
+                inicio_mes = hoje_br.replace(day=1)
+                
+                with f1: data_ini = st.date_input("Início", inicio_mes)
+                with f2: data_fim = st.date_input("Fim", hoje_br)
                 with f3: f_status = st.multiselect("Status", ["Conforme", "Não Conforme"], default=["Conforme", "Não Conforme"])
                 
                 f4, f5 = st.columns(2)
@@ -162,13 +174,20 @@ elif menu == "Histórico":
                     for a in f_area: opcoes_subs.extend(AREAS[a]["subs"])
                     f_sub = st.multiselect("Subdivisões:", opcoes_subs, default=opcoes_subs)
 
-                df_f = df[(df['Data_dt'].dt.date >= data_ini) & (df['Data_dt'].dt.date <= data_fim) & (df['Status'].isin(f_status)) & (df['Area'].isin(f_area)) & (df['Subdivisao'].isin(f_sub))]
+                # Aplicar filtros
+                df_f = df[
+                    (df['Data_dt'].dt.date >= data_ini) & 
+                    (df['Data_dt'].dt.date <= data_fim) & 
+                    (df['Status'].isin(f_status)) & 
+                    (df['Area'].isin(f_area)) & 
+                    (df['Subdivisao'].isin(f_sub))
+                ]
 
                 if not df_f.empty:
                     st.divider()
                     c_pdf, c_wpp, c_mail = st.columns(3)
                     c_pdf.download_button("📥 PDF Filtrado", gerar_pdf(df_f), "relatorio.pdf")
-                    c_wpp.link_button("📲 WhatsApp", f"https://wa.me/?text=Relatorio")
+                    c_wpp.link_button("📲 WhatsApp", f"https://wa.me/?text=Relatorio de Zeladoria")
                     c_mail.link_button("📧 E-mail", f"mailto:?subject=Relatorio&body={urllib.parse.quote(formatar_corpo_email(df_f))}")
 
             for _, row in df_f.iloc[::-1].iterrows():
@@ -179,4 +198,7 @@ elif menu == "Histórico":
                     with col_i:
                         f_b64 = row.get('Foto_Path', "")
                         if f_b64 and len(str(f_b64)) > 100: st.image(base64.b64decode(f_b64), use_container_width=True)
-    except Exception as e: st.error(f"Erro: {e}")
+        else:
+            st.info("Nenhum registro encontrado na planilha.")
+    except Exception as e: 
+        st.error(f"Erro ao carregar histórico: {e}")
