@@ -81,7 +81,7 @@ AREAS = {
     "Sede Social": {
         "senha": "SSICS", 
         "subs": ["Terraco", "1º Andar", "2º Andar"], 
-        "itens": ["Lampadas", "Piso", "Corrimoes", "Janelas", "Limpeza", "Pintura"]
+        "itens": ["Lampadas", "Piso", "Corrimãos", "Janelas", "Limpeza", "Pintura"]
     },
     "Operacional": {
         "senha": "OPICS", 
