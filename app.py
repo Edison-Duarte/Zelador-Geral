@@ -151,7 +151,7 @@ elif menu == "Histórico":
                 c1, c2, c3 = st.columns(3)
                 with c1: d_ini = st.date_input("De:", hoje_br.date().replace(day=1))
                 with c2: d_fim = st.date_input("Até:", hoje_br.date())
-                with c3: f_status = st.multiselect("Status:", ["Conforme", "Não Conforme"], default=["Conforme", "Não Conforme"])
+                with c3: f_status = st.multiselect("Status:", ["Conforme", "Não Conforme", "Não Aplica"], default=["Conforme", "Não Conforme"])
                 
                 c4, c5 = st.columns(2)
                 # Pega as áreas únicas que REALMENTE existem na planilha para evitar erro
