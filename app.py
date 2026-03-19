@@ -74,7 +74,7 @@ def formatar_corpo_email(df):
     for _, r in df.iterrows():
         status_txt = r.get('Status', 'N/A')
         simbolo = "[OK]" if status_txt == "Conforme" else "[!]" if status_txt == "Não Conforme" else "[-]"
-        corpo += f"{simbolo} {r.get('Item', '')}: {status_txt}\n   Resolvido: {r.get('Resolvido', 'N/A')}\n   Local: {r.get('Area','')} ({r.get('Subdivisao','')})\n   Obs: {r.get('Detalhes', '')}\n\n"
+        corpo += f"{simbolo} {r.get('Item', '')}: {status_txt}\n   Resolvido: {r.get('Resolvido', 'N/A')}\n   Obs: {r.get('Detalhes', '')}\n\n"
     return corpo
 
 # --- 4. TELA INICIAL ---
@@ -107,26 +107,39 @@ if menu == "Nova Inspeção":
         if senha_in == AREAS[area_sel]["senha"]:
             sub_area = st.selectbox("Subdivisão:", AREAS[area_sel]["subs"])
             respostas_form = []
+            
             for item in AREAS[area_sel]["itens"]:
                 with st.container(border=True):
                     st.write(f"**{item}**")
                     status = st.radio(f"Situação {item}", ["Conforme", "Não Conforme", "N/A"], key=f"r_{item}", horizontal=True)
                     acao, obs, foto = "N/A", "", None
+                    
                     if status == "Não Conforme":
                         c1, c2 = st.columns(2)
                         with c1: acao = st.selectbox("Ação", ["Limpeza", "Reparo", "Troca", "Pintura"], key=f"ac_{item}")
                         with c2: obs = st.text_input("Obs", key=f"ob_{item}")
-                        foto = st.camera_input("Foto", key=f"cp_{item}")
+                        
+                        # --- RESTAURAÇÃO DA OPÇÃO DE ORIGEM DA FOTO ---
+                        origem_foto = st.radio("Origem da foto:", ["Câmera", "Galeria"], key=f"ori_{item}", horizontal=True)
+                        if origem_foto == "Câmera":
+                            foto = st.camera_input("Tirar Foto", key=f"cam_{item}")
+                        else:
+                            foto = st.file_uploader("Escolher da Galeria", type=['jpg', 'jpeg', 'png'], key=f"gal_{item}")
+                    
                     respostas_form.append({"item": item, "status": status, "acao": acao, "obs": obs, "foto": foto})
 
             if st.button("🚀 SALVAR INSPEÇÃO", use_container_width=True):
-                if not nome_usuario: st.error("Nome obrigatório.")
+                if not nome_usuario:
+                    st.error("Nome do inspetor obrigatório.")
                 else:
                     with st.spinner("Gravando..."):
                         ts = hoje_br.strftime("%d/%m/%Y %H:%M")
-                        dados = [[ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], preparar_foto(r["foto"]), "Não"] for r in respostas_form]
+                        dados = []
+                        for r in respostas_form:
+                            f_txt = preparar_foto(r["foto"])
+                            dados.append([ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], f_txt, "Não"])
                         worksheet.append_rows(dados)
-                        st.success("✅ Salvo!")
+                        st.success("✅ Salvo com sucesso!")
 
 elif menu == "Histórico":
     st.subheader("📂 Histórico e Regularização")
@@ -137,7 +150,6 @@ elif menu == "Histórico":
             df = pd.DataFrame(dados_brutos[1:], columns=colunas)
             df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
 
-            # --- FILTROS ---
             with st.expander("🔍 Filtros Avançados", expanded=True):
                 c1, c2, c3 = st.columns(3)
                 with c1: d_ini = st.date_input("Início", hoje_br.date().replace(day=1))
@@ -157,11 +169,11 @@ elif menu == "Histórico":
             if not df_f.empty:
                 st.write(f"🔍 Registros encontrados: **{len(df_f)}**")
                 
-                # --- BOTÕES DE EXPORTAÇÃO (RESTAURADOS) ---
+                # Botões de Exportação
                 ce1, ce2, ce3 = st.columns(3)
-                ce1.download_button("📥 Baixar PDF Filtrado", gerar_pdf(df_f), "relatorio_zeladoria.pdf", use_container_width=True)
-                ce2.link_button("📲 Enviar via WhatsApp", f"https://wa.me/?text=Relatório%20de%20Zeladoria", use_container_width=True)
-                ce3.link_button("📧 Enviar via E-mail", f"mailto:?subject=Relatorio%20Zeladoria&body={urllib.parse.quote(formatar_corpo_email(df_f))}", use_container_width=True)
+                ce1.download_button("📥 Baixar PDF Filtrado", gerar_pdf(df_f), "relatorio.pdf", use_container_width=True)
+                ce2.link_button("📲 WhatsApp", f"https://wa.me/?text=Relatorio", use_container_width=True)
+                ce3.link_button("📧 E-mail", f"mailto:?body={urllib.parse.quote(formatar_corpo_email(df_f))}", use_container_width=True)
                 
                 st.divider()
                 
@@ -180,6 +192,7 @@ elif menu == "Histórico":
                                     st.success("Atualizado!")
                                     st.rerun()
                         with col_img:
+                            # Busca segura pela coluna de foto (Foto_Path)
                             f_data = row.get('Foto_Path', row.get('Foto', ""))
                             if f_data and len(str(f_data)) > 100:
                                 st.image(base64.b64decode(f_data), use_container_width=True)
