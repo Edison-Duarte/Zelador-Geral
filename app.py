@@ -58,12 +58,23 @@ def preparar_foto(foto_file):
         return base64.b64encode(buffer.getvalue()).decode()
     except: return ""
 
+def gerar_pdf(df):
+    pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", "B", 14)
+    pdf.cell(190, 10, "Relatorio de Zeladoria", ln=True, align="C")
+    pdf.set_font("Arial", "", 10)
+    for _, r in df.iterrows():
+        pdf.set_fill_color(240, 240, 240)
+        pdf.cell(190, 8, f"{r.get('Item', 'Item')} - {r.get('Status', 'Status')}", ln=True, fill=True)
+        pdf.multi_cell(190, 5, f"Data: {r.get('Data','')}\nLocal: {r.get('Area','')} ({r.get('Subdivisao','')})\nObs: {r.get('Detalhes','')}\nResolvido: {r.get('Resolvido','N/A')}\n")
+        pdf.ln(2)
+    return pdf.output(dest='S').encode('latin-1', 'replace')
+
 def formatar_corpo_email(df):
     corpo = "RELATORIO DE ZELADORIA\n\n"
     for _, r in df.iterrows():
         status_txt = r.get('Status', 'N/A')
         simbolo = "[OK]" if status_txt == "Conforme" else "[!]" if status_txt == "Não Conforme" else "[-]"
-        corpo += f"{simbolo} {r.get('Item', '')}: {status_txt}\n   Resolvido: {r.get('Resolvido', 'N/A')}\n   Obs: {r.get('Detalhes', '')}\n\n"
+        corpo += f"{simbolo} {r.get('Item', '')}: {status_txt}\n   Resolvido: {r.get('Resolvido', 'N/A')}\n   Local: {r.get('Area','')} ({r.get('Subdivisao','')})\n   Obs: {r.get('Detalhes', '')}\n\n"
     return corpo
 
 # --- 4. TELA INICIAL ---
@@ -78,7 +89,7 @@ if dia_semana_idx < 5:
         st.subheader(f"📅 Missão de Hoje: {hoje_br.strftime('%A')}")
         st.info(f"📍 **Área:** {missao['area']} | **Locais:** {missao['detalhes']}")
 else:
-    st.success("🌴 Final de semana! Sem inspeções agendadas.")
+    st.success("🌴 Final de semana!")
 
 st.divider()
 
@@ -92,11 +103,10 @@ if menu == "Nova Inspeção":
     area_sel = st.selectbox("Área Principal:", lista_areas, index=idx_init)
 
     if area_sel != "Selecione...":
-        senha_in = st.text_input("Senha da Área:", type="password")
+        senha_in = st.text_input("Senha:", type="password")
         if senha_in == AREAS[area_sel]["senha"]:
             sub_area = st.selectbox("Subdivisão:", AREAS[area_sel]["subs"])
             respostas_form = []
-            
             for item in AREAS[area_sel]["itens"]:
                 with st.container(border=True):
                     st.write(f"**{item}**")
@@ -110,30 +120,21 @@ if menu == "Nova Inspeção":
                     respostas_form.append({"item": item, "status": status, "acao": acao, "obs": obs, "foto": foto})
 
             if st.button("🚀 SALVAR INSPEÇÃO", use_container_width=True):
-                if not nome_usuario:
-                    st.error("Nome do inspetor obrigatório.")
+                if not nome_usuario: st.error("Nome obrigatório.")
                 else:
                     with st.spinner("Gravando..."):
                         ts = hoje_br.strftime("%d/%m/%Y %H:%M")
-                        dados = []
-                        for r in respostas_form:
-                            f_txt = preparar_foto(r["foto"])
-                            # Colunas: Data, Usuario, Area, Subdivisao, Item, Status, Acao, Detalhes, Foto_Path, Resolvido
-                            dados.append([ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], f_txt, "Não"])
+                        dados = [[ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], preparar_foto(r["foto"]), "Não"] for r in respostas_form]
                         worksheet.append_rows(dados)
-                        st.success("✅ Salvo com sucesso!")
+                        st.success("✅ Salvo!")
 
 elif menu == "Histórico":
     st.subheader("📂 Histórico e Regularização")
     try:
-        # Leitura Robusta
         dados_brutos = worksheet.get_all_values()
         if len(dados_brutos) > 1:
-            colunas = dados_brutos[0]
+            colunas = [c.strip() for c in dados_brutos[0]]
             df = pd.DataFrame(dados_brutos[1:], columns=colunas)
-            
-            # Padronização de nomes de colunas para evitar erros de busca
-            df.columns = [c.strip() for c in df.columns]
             df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
 
             # --- FILTROS ---
@@ -147,9 +148,7 @@ elif menu == "Histórico":
                 with c4: f_resol = st.radio("Filtro Resolvidos:", ["Todos", "Pendentes", "Resolvidos"], horizontal=True)
                 with c5: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
 
-            # Aplicação da Máscara de Filtro
             mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Status'].isin(f_status)) & (df['Area'].isin(f_area))
-            
             if f_resol == "Pendentes": mask = mask & (df['Resolvido'] == "Não")
             elif f_resol == "Resolvidos": mask = mask & (df['Resolvido'] == "Sim")
             
@@ -158,49 +157,33 @@ elif menu == "Histórico":
             if not df_f.empty:
                 st.write(f"🔍 Registros encontrados: **{len(df_f)}**")
                 
-                # Botão de E-mail rápido
-                st.link_button("📧 Enviar Relatório Filtrado por E-mail", f"mailto:?subject=Relatorio&body={urllib.parse.quote(formatar_corpo_email(df_f))}")
+                # --- BOTÕES DE EXPORTAÇÃO (RESTAURADOS) ---
+                ce1, ce2, ce3 = st.columns(3)
+                ce1.download_button("📥 Baixar PDF Filtrado", gerar_pdf(df_f), "relatorio_zeladoria.pdf", use_container_width=True)
+                ce2.link_button("📲 Enviar via WhatsApp", f"https://wa.me/?text=Relatório%20de%20Zeladoria", use_container_width=True)
+                ce3.link_button("📧 Enviar via E-mail", f"mailto:?subject=Relatorio%20Zeladoria&body={urllib.parse.quote(formatar_corpo_email(df_f))}", use_container_width=True)
                 
                 st.divider()
                 
                 for index, row in df_f.iloc[::-1].iterrows():
-                    # Definir ícone
                     emoji = "✅" if row['Status'] == "Conforme" else "🔴" if row['Status'] == "Não Conforme" else "⚪"
-                    txt_resol = " (RESOLVIDO)" if row.get('Resolvido') == "Sim" else " (PENDENTE)" if row['Status'] == "Não Conforme" else ""
+                    txt_res = " (RESOLVIDO)" if row.get('Resolvido') == "Sim" else " (PENDENTE)" if row['Status'] == "Não Conforme" else ""
                     
-                    with st.expander(f"{emoji}{txt_resol} {row['Data']} - {row['Area']} - {row['Item']}"):
+                    with st.expander(f"{emoji}{txt_res} {row['Data']} - {row['Area']} - {row['Item']}"):
                         col_info, col_img = st.columns([2, 1])
                         with col_info:
-                            st.write(f"**Local:** {row['Subdivisao']}")
-                            st.write(f"**Status:** {row['Status']} | **Ação:** {row['Acao']}")
-                            st.write(f"**Obs:** {row['Detalhes']}")
-                            st.write(f"**Inspetor:** {row['Usuario']}")
-                            
-                            # Lógica do Botão de Regularizar
+                            st.write(f"**Local:** {row['Subdivisao']}\n**Ação:** {row['Acao']}\n**Obs:** {row['Detalhes']}\n**Inspetor:** {row['Usuario']}")
                             if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
                                 if st.button(f"Marcar como Regularizada", key=f"reg_{index}"):
-                                    # Resolvido está na coluna 10 (J)
-                                    try:
-                                        col_idx = colunas.index("Resolvido") + 1
-                                        worksheet.update_cell(index + 2, col_idx, "Sim")
-                                        st.success("Atualizado! Recarregue a página.")
-                                        st.rerun()
-                                    except:
-                                        st.error("Erro ao atualizar coluna 'Resolvido'. Verifique se ela existe na célula J1.")
-
+                                    col_idx = colunas.index("Resolvido") + 1
+                                    worksheet.update_cell(index + 2, col_idx, "Sim")
+                                    st.success("Atualizado!")
+                                    st.rerun()
                         with col_img:
-                            # Busca segura pela coluna de foto
                             f_data = row.get('Foto_Path', row.get('Foto', ""))
                             if f_data and len(str(f_data)) > 100:
-                                try:
-                                    st.image(base64.b64decode(f_data), use_container_width=True)
-                                except:
-                                    st.caption("Erro ao carregar imagem.")
-                            else:
-                                st.caption("Sem foto")
+                                st.image(base64.b64decode(f_data), use_container_width=True)
             else:
                 st.info("Nenhum dado encontrado.")
-        else:
-            st.info("Planilha vazia.")
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
