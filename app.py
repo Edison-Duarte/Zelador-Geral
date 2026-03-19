@@ -58,6 +58,14 @@ def preparar_foto(foto_file):
         return base64.b64encode(buffer.getvalue()).decode()
     except: return ""
 
+def formatar_corpo_email(df):
+    corpo = "RELATORIO DE ZELADORIA\n\n"
+    for _, r in df.iterrows():
+        status_txt = r.get('Status', 'N/A')
+        simbolo = "[OK]" if status_txt == "Conforme" else "[!]" if status_txt == "Não Conforme" else "[-]"
+        corpo += f"{simbolo} {r.get('Item', '')}: {status_txt}\n   Resolvido: {r.get('Resolvido', 'N/A')}\n   Obs: {r.get('Detalhes', '')}\n\n"
+    return corpo
+
 # --- 4. TELA INICIAL ---
 hoje_br = get_data_hora_brasil()
 dia_semana_idx = hoje_br.weekday()
@@ -70,7 +78,7 @@ if dia_semana_idx < 5:
         st.subheader(f"📅 Missão de Hoje: {hoje_br.strftime('%A')}")
         st.info(f"📍 **Área:** {missao['area']} | **Locais:** {missao['detalhes']}")
 else:
-    st.success("🌴 Final de semana!")
+    st.success("🌴 Final de semana! Sem inspeções agendadas.")
 
 st.divider()
 
@@ -84,7 +92,7 @@ if menu == "Nova Inspeção":
     area_sel = st.selectbox("Área Principal:", lista_areas, index=idx_init)
 
     if area_sel != "Selecione...":
-        senha_in = st.text_input("Senha:", type="password")
+        senha_in = st.text_input("Senha da Área:", type="password")
         if senha_in == AREAS[area_sel]["senha"]:
             sub_area = st.selectbox("Subdivisão:", AREAS[area_sel]["subs"])
             respostas_form = []
@@ -99,84 +107,99 @@ if menu == "Nova Inspeção":
                         with c1: acao = st.selectbox("Ação", ["Limpeza", "Reparo", "Troca", "Pintura"], key=f"ac_{item}")
                         with c2: obs = st.text_input("Obs", key=f"ob_{item}")
                         foto = st.camera_input("Foto", key=f"cp_{item}")
-                    # Adiciona 'Não' por padrão na coluna Resolvido
                     respostas_form.append({"item": item, "status": status, "acao": acao, "obs": obs, "foto": foto})
 
             if st.button("🚀 SALVAR INSPEÇÃO", use_container_width=True):
-                with st.spinner("A gravar..."):
-                    ts = hoje_br.strftime("%d/%m/%Y %H:%M")
-                    dados = []
-                    for r in respostas_form:
-                        f_txt = preparar_foto(r["foto"])
-                        # Ordem: Data, Inspetor, Área, Sub, Item, Status, Ação, Obs, Foto, Resolvido
-                        dados.append([ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], f_txt, "Não"])
-                    worksheet.append_rows(dados)
-                    st.success("✅ Salvo com sucesso!")
+                if not nome_usuario:
+                    st.error("Nome do inspetor obrigatório.")
+                else:
+                    with st.spinner("Gravando..."):
+                        ts = hoje_br.strftime("%d/%m/%Y %H:%M")
+                        dados = []
+                        for r in respostas_form:
+                            f_txt = preparar_foto(r["foto"])
+                            # Colunas: Data, Usuario, Area, Subdivisao, Item, Status, Acao, Detalhes, Foto_Path, Resolvido
+                            dados.append([ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], f_txt, "Não"])
+                        worksheet.append_rows(dados)
+                        st.success("✅ Salvo com sucesso!")
 
 elif menu == "Histórico":
-    st.subheader("📂 Histórico de Inspeções")
+    st.subheader("📂 Histórico e Regularização")
     try:
+        # Leitura Robusta
         dados_brutos = worksheet.get_all_values()
         if len(dados_brutos) > 1:
-            # Garante que temos as colunas certas, incluindo 'Resolvido'
             colunas = dados_brutos[0]
             df = pd.DataFrame(dados_brutos[1:], columns=colunas)
+            
+            # Padronização de nomes de colunas para evitar erros de busca
+            df.columns = [c.strip() for c in df.columns]
             df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
 
             # --- FILTROS ---
-            with st.expander("🔍 Filtros de Busca", expanded=True):
+            with st.expander("🔍 Filtros Avançados", expanded=True):
                 c1, c2, c3 = st.columns(3)
                 with c1: d_ini = st.date_input("Início", hoje_br.date().replace(day=1))
                 with c2: d_fim = st.date_input("Fim", hoje_br.date())
                 with c3: f_status = st.multiselect("Status:", ["Conforme", "Não Conforme", "N/A"], default=["Conforme", "Não Conforme", "N/A"])
                 
                 c4, c5 = st.columns(2)
-                with c4: 
-                    # Filtro de Regularização (Novo)
-                    f_resolvido = st.radio("Mostrar Não Conformidades:", ["Todas", "Apenas Pendentes", "Apenas Resolvidas"], horizontal=True)
-                with c5:
-                    f_area = st.multiselect("Filtrar Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
+                with c4: f_resol = st.radio("Filtro Resolvidos:", ["Todos", "Pendentes", "Resolvidos"], horizontal=True)
+                with c5: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
 
-            # Lógica do filtro de resolvidos
+            # Aplicação da Máscara de Filtro
             mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Status'].isin(f_status)) & (df['Area'].isin(f_area))
             
-            if f_resolvido == "Apenas Pendentes":
-                mask = mask & (df['Resolvido'] == "Não")
-            elif f_resolvido == "Apenas Resolvidas":
-                mask = mask & (df['Resolvido'] == "Sim")
+            if f_resol == "Pendentes": mask = mask & (df['Resolvido'] == "Não")
+            elif f_resol == "Resolvidos": mask = mask & (df['Resolvido'] == "Sim")
             
             df_f = df.loc[mask]
 
             if not df_f.empty:
+                st.write(f"🔍 Registros encontrados: **{len(df_f)}**")
+                
+                # Botão de E-mail rápido
+                st.link_button("📧 Enviar Relatório Filtrado por E-mail", f"mailto:?subject=Relatorio&body={urllib.parse.quote(formatar_corpo_email(df_f))}")
+                
+                st.divider()
+                
                 for index, row in df_f.iloc[::-1].iterrows():
-                    # Definir ícone por status e resolução
-                    if row['Status'] == "Não Conforme":
-                        emoji = "🔴 Pendente" if row['Resolvido'] == "Não" else "🟢 RESOLVIDO"
-                    else:
-                        emoji = "✅ Conforme" if row['Status'] == "Conforme" else "⚪ N/A"
-
-                    with st.expander(f"{emoji} | {row['Data']} - {row['Area']} ({row['Item']})"):
+                    # Definir ícone
+                    emoji = "✅" if row['Status'] == "Conforme" else "🔴" if row['Status'] == "Não Conforme" else "⚪"
+                    txt_resol = " (RESOLVIDO)" if row.get('Resolvido') == "Sim" else " (PENDENTE)" if row['Status'] == "Não Conforme" else ""
+                    
+                    with st.expander(f"{emoji}{txt_resol} {row['Data']} - {row['Area']} - {row['Item']}"):
                         col_info, col_img = st.columns([2, 1])
                         with col_info:
-                            st.write(f"**Subdivisão:** {row['Subdivisao']}")
-                            st.write(f"**Ação Necessária:** {row['Acao']}")
-                            st.write(f"**Observação:** {row['Detalhes']}")
+                            st.write(f"**Local:** {row['Subdivisao']}")
+                            st.write(f"**Status:** {row['Status']} | **Ação:** {row['Acao']}")
+                            st.write(f"**Obs:** {row['Detalhes']}")
+                            st.write(f"**Inspetor:** {row['Usuario']}")
                             
-                            # BOTÃO PARA REGULARIZAR (Apenas para Não Conformidades Pendentes)
-                            if row['Status'] == "Não Conforme" and row['Resolvido'] == "Não":
-                                if st.button(f"Marcar como Regularizada", key=f"btn_{index}"):
-                                    # O gspread usa índice 1 e conta o cabeçalho, então index + 2
-                                    # A coluna 'Resolvido' é a 10 (J)
-                                    col_resolvido_idx = colunas.index("Resolvido") + 1
-                                    worksheet.update_cell(index + 2, col_resolvido_idx, "Sim")
-                                    st.success("Regularização registada! Recarregue a página.")
-                                    st.rerun()
+                            # Lógica do Botão de Regularizar
+                            if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
+                                if st.button(f"Marcar como Regularizada", key=f"reg_{index}"):
+                                    # Resolvido está na coluna 10 (J)
+                                    try:
+                                        col_idx = colunas.index("Resolvido") + 1
+                                        worksheet.update_cell(index + 2, col_idx, "Sim")
+                                        st.success("Atualizado! Recarregue a página.")
+                                        st.rerun()
+                                    except:
+                                        st.error("Erro ao atualizar coluna 'Resolvido'. Verifique se ela existe na célula J1.")
 
                         with col_img:
-                            if row['Foto'] and len(str(row['Foto'])) > 100:
-                                st.image(base64.b64decode(row['Foto']), use_container_width=True)
+                            # Busca segura pela coluna de foto
+                            f_data = row.get('Foto_Path', row.get('Foto', ""))
+                            if f_data and len(str(f_data)) > 100:
+                                try:
+                                    st.image(base64.b64decode(f_data), use_container_width=True)
+                                except:
+                                    st.caption("Erro ao carregar imagem.")
+                            else:
+                                st.caption("Sem foto")
             else:
-                st.info("Nenhum registo encontrado.")
+                st.info("Nenhum dado encontrado.")
         else:
             st.info("Planilha vazia.")
     except Exception as e:
