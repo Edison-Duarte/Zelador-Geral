@@ -107,37 +107,26 @@ if menu == "Nova Inspeção":
         if senha_in == AREAS[area_sel]["senha"]:
             sub_area = st.selectbox("Subdivisão:", AREAS[area_sel]["subs"])
             respostas_form = []
-            
             for item in AREAS[area_sel]["itens"]:
                 with st.container(border=True):
                     st.write(f"**{item}**")
                     status = st.radio(f"Situação {item}", ["Conforme", "Não Conforme", "N/A"], key=f"r_{item}", horizontal=True)
                     acao, obs, foto = "N/A", "", None
-                    
                     if status == "Não Conforme":
                         c1, c2 = st.columns(2)
                         with c1: acao = st.selectbox("Ação", ["Limpeza", "Reparo", "Troca", "Pintura"], key=f"ac_{item}")
                         with c2: obs = st.text_input("Obs", key=f"ob_{item}")
-                        
-                        # --- RESTAURAÇÃO DA OPÇÃO DE ORIGEM DA FOTO ---
                         origem_foto = st.radio("Origem da foto:", ["Câmera", "Galeria"], key=f"ori_{item}", horizontal=True)
-                        if origem_foto == "Câmera":
-                            foto = st.camera_input("Tirar Foto", key=f"cam_{item}")
-                        else:
-                            foto = st.file_uploader("Escolher da Galeria", type=['jpg', 'jpeg', 'png'], key=f"gal_{item}")
-                    
+                        if origem_foto == "Câmera": foto = st.camera_input("Tirar Foto", key=f"cam_{item}")
+                        else: foto = st.file_uploader("Escolher da Galeria", type=['jpg', 'jpeg', 'png'], key=f"gal_{item}")
                     respostas_form.append({"item": item, "status": status, "acao": acao, "obs": obs, "foto": foto})
 
             if st.button("🚀 SALVAR INSPEÇÃO", use_container_width=True):
-                if not nome_usuario:
-                    st.error("Nome do inspetor obrigatório.")
+                if not nome_usuario: st.error("Nome do inspetor obrigatório.")
                 else:
                     with st.spinner("Gravando..."):
                         ts = hoje_br.strftime("%d/%m/%Y %H:%M")
-                        dados = []
-                        for r in respostas_form:
-                            f_txt = preparar_foto(r["foto"])
-                            dados.append([ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], f_txt, "Não"])
+                        dados = [[ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], preparar_foto(r["foto"]), "Não"] for r in respostas_form]
                         worksheet.append_rows(dados)
                         st.success("✅ Salvo com sucesso!")
 
@@ -154,29 +143,32 @@ elif menu == "Histórico":
                 c1, c2, c3 = st.columns(3)
                 with c1: d_ini = st.date_input("Início", hoje_br.date().replace(day=1))
                 with c2: d_fim = st.date_input("Fim", hoje_br.date())
-                with c3: f_status = st.multiselect("Status:", ["Conforme", "Não Conforme", "N/A"], default=["Conforme", "Não Conforme", "N/A"])
+                with c3: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
                 
-                c4, c5 = st.columns(2)
-                with c4: f_resol = st.radio("Filtro Resolvidos:", ["Todos", "Pendentes", "Resolvidos"], horizontal=True)
-                with c5: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
+                # NOVO FILTRO DE ESTADO (PENDENTE / RESOLVIDO / TODOS)
+                f_resol = st.radio("Exibir no Histórico:", ["Todos os Registos", "Apenas Pendentes (Não Conforme)", "Apenas Resolvidos"], horizontal=True)
 
-            mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Status'].isin(f_status)) & (df['Area'].isin(f_area))
-            if f_resol == "Pendentes": mask = mask & (df['Resolvido'] == "Não")
-            elif f_resol == "Resolvidos": mask = mask & (df['Resolvido'] == "Sim")
+            # --- LÓGICA DE FILTRAGEM ---
+            mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Area'].isin(f_area))
             
+            if f_resol == "Apenas Pendentes (Não Conforme)":
+                # Mostra APENAS Não Conforme que NÃO foram resolvidos (Esconde N/A e Conforme)
+                mask = mask & (df['Status'] == "Não Conforme") & (df['Resolvido'] == "Não")
+            elif f_resol == "Apenas Resolvidos":
+                # Mostra o que foi marcado como Sim (Esconde Pendentes, N/A e Conforme originais)
+                mask = mask & (df['Resolvido'] == "Sim")
+            # "Todos os Registos" mantém a máscara original sem filtros de status adicionais
+
             df_f = df.loc[mask]
 
             if not df_f.empty:
                 st.write(f"🔍 Registros encontrados: **{len(df_f)}**")
-                
-                # Botões de Exportação
                 ce1, ce2, ce3 = st.columns(3)
-                ce1.download_button("📥 Baixar PDF Filtrado", gerar_pdf(df_f), "relatorio.pdf", use_container_width=True)
-                ce2.link_button("📲 WhatsApp", f"https://wa.me/?text=Relatorio", use_container_width=True)
+                ce1.download_button("📥 Baixar PDF", gerar_pdf(df_f), "relatorio.pdf", use_container_width=True)
+                ce2.link_button("📲 WhatsApp", f"https://wa.me/", use_container_width=True)
                 ce3.link_button("📧 E-mail", f"mailto:?body={urllib.parse.quote(formatar_corpo_email(df_f))}", use_container_width=True)
                 
                 st.divider()
-                
                 for index, row in df_f.iloc[::-1].iterrows():
                     emoji = "✅" if row['Status'] == "Conforme" else "🔴" if row['Status'] == "Não Conforme" else "⚪"
                     txt_res = " (RESOLVIDO)" if row.get('Resolvido') == "Sim" else " (PENDENTE)" if row['Status'] == "Não Conforme" else ""
@@ -192,11 +184,10 @@ elif menu == "Histórico":
                                     st.success("Atualizado!")
                                     st.rerun()
                         with col_img:
-                            # Busca segura pela coluna de foto (Foto_Path)
                             f_data = row.get('Foto_Path', row.get('Foto', ""))
                             if f_data and len(str(f_data)) > 100:
                                 st.image(base64.b64decode(f_data), use_container_width=True)
             else:
-                st.info("Nenhum dado encontrado.")
+                st.info("Nenhum dado encontrado para os critérios selecionados.")
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
