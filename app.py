@@ -27,7 +27,7 @@ INFO_CRONOGRAMA = {
 
 AREAS = {
     "Sede Social": {"senha": "SSICS", "subs": ["Terraco", "1º Andar", "2º Andar"], "itens": ["Lampadas", "Piso", "Corrimoes", "Janelas", "Limpeza", "Pintura"]},
-    "Operacional": {"senha": "OPICS", "subs": ["Pátio", "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo"], "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]},
+    "Operacional": {"senha": "OPICS", "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo"], "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]},
     "Flats": {"senha": "FLATS", "subs": ["Bloco A - Terreo", "Bloco A - 1º Andar", "Bloco A - 2º Andar", "Bloco A - 3º Andar", "Bloco A - 4º Andar", "Bloco A - Terraco", "Bloco A - Garagem", "Bloco B - Terreo", "Bloco B - 1º Andar", "Bloco B - 2º Andar", "Bloco B - 3º Andar", "Bloco B - 4º Andar", "Bloco B - Terraco", "Bloco B - Garagem"], "itens": ["Lampadas/Iluminacao", "Piso/Escadarias", "Pintura", "Limpeza", "Interfones", "Extintores"]},
     "Predios ADM": {"senha": "ADMICS", "subs": ["Secretaria Nautica", "Administracao Marina ICS", "1º andar (RH/TI)", "Predio Sala Radio"], "itens": ["Ar-condicionado", "Iluminacao", "Limpeza", "Mobiliario", "Pintura", "Portas/Vidros"]}
 }
@@ -145,20 +145,18 @@ elif menu == "Histórico":
                 with c2: d_fim = st.date_input("Fim", hoje_br.date())
                 with c3: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
                 
-                # NOVO FILTRO DE ESTADO (PENDENTE / RESOLVIDO / TODOS)
-                f_resol = st.radio("Exibir no Histórico:", ["Todos os Registos", "Apenas Pendentes (Não Conforme)", "Apenas Resolvidos"], horizontal=True)
+                # --- FILTRO CONFIGURADO PARA CARREGAR COM 'PENDENTES' POR PADRÃO ---
+                opcoes_filtro = ["Apenas Pendentes (Não Conforme)", "Apenas Resolvidos", "Todos os Registos"]
+                f_resol = st.radio("Exibir no Histórico:", opcoes_filtro, index=0, horizontal=True)
 
             # --- LÓGICA DE FILTRAGEM ---
             mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Area'].isin(f_area))
             
             if f_resol == "Apenas Pendentes (Não Conforme)":
-                # Mostra APENAS Não Conforme que NÃO foram resolvidos (Esconde N/A e Conforme)
                 mask = mask & (df['Status'] == "Não Conforme") & (df['Resolvido'] == "Não")
             elif f_resol == "Apenas Resolvidos":
-                # Mostra o que foi marcado como Sim (Esconde Pendentes, N/A e Conforme originais)
                 mask = mask & (df['Resolvido'] == "Sim")
-            # "Todos os Registos" mantém a máscara original sem filtros de status adicionais
-
+            
             df_f = df.loc[mask]
 
             if not df_f.empty:
@@ -188,6 +186,6 @@ elif menu == "Histórico":
                             if f_data and len(str(f_data)) > 100:
                                 st.image(base64.b64decode(f_data), use_container_width=True)
             else:
-                st.info("Nenhum dado encontrado para os critérios selecionados.")
+                st.info("Nenhum item pendente no momento.")
     except Exception as e:
         st.error(f"Erro no histórico: {e}")
