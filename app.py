@@ -27,7 +27,7 @@ INFO_CRONOGRAMA = {
 
 AREAS = {
     "Sede Social": {"senha": "SSICS", "subs": ["Terraco", "1º Andar", "2º Andar"], "itens": ["Lampadas", "Piso", "Corrimoes", "Janelas", "Limpeza", "Pintura"]},
-    "Operacional": {"senha": "OPICS", "subs": ["Pátio", "Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo"], "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]},
+    "Operacional": {"senha": "OPICS", "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo"], "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]},
     "Flats": {"senha": "FLATS", "subs": ["Bloco A - Terreo", "Bloco A - 1º Andar", "Bloco A - 2º Andar", "Bloco A - 3º Andar", "Bloco A - 4º Andar", "Bloco A - Terraco", "Bloco A - Garagem", "Bloco B - Terreo", "Bloco B - 1º Andar", "Bloco B - 2º Andar", "Bloco B - 3º Andar", "Bloco B - 4º Andar", "Bloco B - Terraco", "Bloco B - Garagem"], "itens": ["Lampadas/Iluminacao", "Piso/Escadarias", "Pintura", "Limpeza", "Interfones", "Extintores"]},
     "Predios ADM": {"senha": "ADMICS", "subs": ["Secretaria Nautica", "Administracao Marina ICS", "1º andar (RH/TI)", "Predio Sala Radio"], "itens": ["Ar-condicionado", "Iluminacao", "Limpeza", "Mobiliario", "Pintura", "Portas/Vidros"]}
 }
@@ -65,7 +65,7 @@ def gerar_pdf(df):
     for _, r in df.iterrows():
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(190, 8, f"{r.get('Item', 'Item')} - {r.get('Status', 'Status')}", ln=True, fill=True)
-        pdf.multi_cell(190, 5, f"Data: {r.get('Data','')}\nLocal: {r.get('Area','')} ({r.get('Subdivisao','')})\nObs: {r.get('Detalhes','')}\nResolvido: {r.get('Resolvido','N/A')}\n")
+        pdf.multi_cell(190, 5, f"Data: {r.get('Data','')}\nLocal: {r.get('Area','')} ({r.get('Subdivisao','')})\nResolvido: {r.get('Resolvido','N/A')}\nObs Acomp: {r.get('Obs_Acompanhamento','')}\n")
         pdf.ln(2)
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
@@ -74,7 +74,7 @@ def formatar_corpo_email(df):
     for _, r in df.iterrows():
         status_txt = r.get('Status', 'N/A')
         simbolo = "[OK]" if status_txt == "Conforme" else "[!]" if status_txt == "Não Conforme" else "[-]"
-        corpo += f"{simbolo} {r.get('Item', '')}: {status_txt}\n   Resolvido: {r.get('Resolvido', 'N/A')}\n   Obs: {r.get('Detalhes', '')}\n\n"
+        corpo += f"{simbolo} {r.get('Item', '')}: {status_txt}\n   Resolvido: {r.get('Resolvido', 'N/A')}\n   Andamento: {r.get('Obs_Acompanhamento', '')}\n\n"
     return corpo
 
 # --- 4. TELA INICIAL ---
@@ -115,7 +115,7 @@ if menu == "Nova Inspeção":
                     if status == "Não Conforme":
                         c1, c2 = st.columns(2)
                         with c1: acao = st.selectbox("Ação", ["Limpeza", "Reparo", "Troca", "Pintura"], key=f"ac_{item}")
-                        with c2: obs = st.text_input("Obs", key=f"ob_{item}")
+                        with c2: obs = st.text_input("Obs Inicial", key=f"ob_{item}")
                         origem_foto = st.radio("Origem da foto:", ["Câmera", "Galeria"], key=f"ori_{item}", horizontal=True)
                         if origem_foto == "Câmera": foto = st.camera_input("Tirar Foto", key=f"cam_{item}")
                         else: foto = st.file_uploader("Escolher da Galeria", type=['jpg', 'jpeg', 'png'], key=f"gal_{item}")
@@ -126,12 +126,13 @@ if menu == "Nova Inspeção":
                 else:
                     with st.spinner("Gravando..."):
                         ts = hoje_br.strftime("%d/%m/%Y %H:%M")
-                        dados = [[ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], preparar_foto(r["foto"]), "Não"] for r in respostas_form]
+                        # Colunas: Data, Usuario, Area, Subdivisao, Item, Status, Acao, Detalhes, Foto_Path, Resolvido, Obs_Acompanhamento
+                        dados = [[ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], preparar_foto(r["foto"]), "Não", ""] for r in respostas_form]
                         worksheet.append_rows(dados)
                         st.success("✅ Salvo com sucesso!")
 
 elif menu == "Histórico":
-    st.subheader("📂 Histórico e Regularização")
+    st.subheader("📂 Gestão de Não Conformidades")
     try:
         dados_brutos = worksheet.get_all_values()
         if len(dados_brutos) > 1:
@@ -139,17 +140,19 @@ elif menu == "Histórico":
             df = pd.DataFrame(dados_brutos[1:], columns=colunas)
             df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
 
+            # Se a coluna Obs_Acompanhamento não existir no DF, criamos
+            if "Obs_Acompanhamento" not in df.columns:
+                df["Obs_Acompanhamento"] = ""
+
             with st.expander("🔍 Filtros Avançados", expanded=True):
                 c1, c2, c3 = st.columns(3)
                 with c1: d_ini = st.date_input("Início", hoje_br.date().replace(day=1))
                 with c2: d_fim = st.date_input("Fim", hoje_br.date())
                 with c3: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
                 
-                # --- FILTRO CONFIGURADO PARA CARREGAR COM 'PENDENTES' POR PADRÃO ---
                 opcoes_filtro = ["Apenas Pendentes (Não Conforme)", "Apenas Resolvidos", "Todos os Registos"]
                 f_resol = st.radio("Exibir no Histórico:", opcoes_filtro, index=0, horizontal=True)
 
-            # --- LÓGICA DE FILTRAGEM ---
             mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Area'].isin(f_area))
             
             if f_resol == "Apenas Pendentes (Não Conforme)":
@@ -162,7 +165,7 @@ elif menu == "Histórico":
             if not df_f.empty:
                 st.write(f"🔍 Registros encontrados: **{len(df_f)}**")
                 ce1, ce2, ce3 = st.columns(3)
-                ce1.download_button("📥 Baixar PDF", gerar_pdf(df_f), "relatorio.pdf", use_container_width=True)
+                ce1.download_button("📥 PDF", gerar_pdf(df_f), "relatorio.pdf", use_container_width=True)
                 ce2.link_button("📲 WhatsApp", f"https://wa.me/", use_container_width=True)
                 ce3.link_button("📧 E-mail", f"mailto:?body={urllib.parse.quote(formatar_corpo_email(df_f))}", use_container_width=True)
                 
@@ -174,13 +177,32 @@ elif menu == "Histórico":
                     with st.expander(f"{emoji}{txt_res} {row['Data']} - {row['Area']} - {row['Item']}"):
                         col_info, col_img = st.columns([2, 1])
                         with col_info:
-                            st.write(f"**Local:** {row['Subdivisao']}\n**Ação:** {row['Acao']}\n**Obs:** {row['Detalhes']}\n**Inspetor:** {row['Usuario']}")
-                            if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
-                                if st.button(f"Marcar como Regularizada", key=f"reg_{index}"):
-                                    col_idx = colunas.index("Resolvido") + 1
-                                    worksheet.update_cell(index + 2, col_idx, "Sim")
-                                    st.success("Atualizado!")
-                                    st.rerun()
+                            st.write(f"**Local:** {row['Subdivisao']} | **Ação:** {row['Acao']}")
+                            st.write(f"**Obs Inicial:** {row['Detalhes']}")
+                            
+                            # --- CAMPO DE OBSERVAÇÃO DE ACOMPANHAMENTO ---
+                            obs_atual = row.get('Obs_Acompanhamento', "")
+                            nova_obs = st.text_area("Andamento / Observações Técnicas:", value=obs_atual, key=f"txt_{index}", height=100)
+                            
+                            ca1, ca2 = st.columns(2)
+                            with ca1:
+                                if st.button("💾 Atualizar Observação", key=f"sav_{index}", use_container_width=True):
+                                    try:
+                                        # Coluna K (11)
+                                        col_obs_idx = colunas.index("Obs_Acompanhamento") + 1
+                                        worksheet.update_cell(index + 2, col_obs_idx, nova_obs)
+                                        st.success("Observação salva!")
+                                        st.rerun()
+                                    except: st.error("Erro ao salvar. Verifique se a coluna 'Obs_Acompanhamento' existe na célula K1.")
+                            
+                            with ca2:
+                                if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
+                                    if st.button(f"✅ Marcar Regularizada", key=f"reg_{index}", use_container_width=True):
+                                        col_idx = colunas.index("Resolvido") + 1
+                                        worksheet.update_cell(index + 2, col_idx, "Sim")
+                                        st.success("Regularizada!")
+                                        st.rerun()
+
                         with col_img:
                             f_data = row.get('Foto_Path', row.get('Foto', ""))
                             if f_data and len(str(f_data)) > 100:
