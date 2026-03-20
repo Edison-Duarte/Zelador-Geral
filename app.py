@@ -134,13 +134,15 @@ if menu == "Nova Inspeção":
 elif menu == "Histórico":
     st.subheader("📂 Gestão de Não Conformidades")
     try:
+        # Forçamos a atualização dos dados para garantir que ele veja a coluna K
         dados_brutos = worksheet.get_all_values()
+        
         if len(dados_brutos) > 1:
             colunas = [c.strip() for c in dados_brutos[0]]
             df = pd.DataFrame(dados_brutos[1:], columns=colunas)
             df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
 
-            # Se a coluna Obs_Acompanhamento não existir no DF, criamos
+            # Verificação de segurança: se a coluna não vier no DataFrame, forçamos a existência dela
             if "Obs_Acompanhamento" not in df.columns:
                 df["Obs_Acompanhamento"] = ""
 
@@ -180,34 +182,39 @@ elif menu == "Histórico":
                             st.write(f"**Local:** {row['Subdivisao']} | **Ação:** {row['Acao']}")
                             st.write(f"**Obs Inicial:** {row['Detalhes']}")
                             
-                            # --- CAMPO DE OBSERVAÇÃO DE ACOMPANHAMENTO ---
+                            # Campo de Observação
                             obs_atual = row.get('Obs_Acompanhamento', "")
-                            nova_obs = st.text_area("Andamento / Observações Técnicas:", value=obs_atual, key=f"txt_{index}", height=100)
-                            
-                            ca1, ca2 = st.columns(2)
-                            with ca1:
-                                if st.button("💾 Atualizar Observação", key=f"sav_{index}", use_container_width=True):
-                                    try:
-                                        # Coluna K (11)
-                                        col_obs_idx = colunas.index("Obs_Acompanhamento") + 1
-                                        worksheet.update_cell(index + 2, col_obs_idx, nova_obs)
-                                        st.success("Observação salva!")
-                                        st.rerun()
-                                    except: st.error("Erro ao salvar. Verifique se a coluna 'Obs_Acompanhamento' existe na célula K1.")
-                            
-                            with ca2:
-                                if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
-                                    if st.button(f"✅ Marcar Regularizada", key=f"reg_{index}", use_container_width=True):
-                                        col_idx = colunas.index("Resolvido") + 1
-                                        worksheet.update_cell(index + 2, col_idx, "Sim")
-                                        st.success("Regularizada!")
-                                        st.rerun()
+                            # Usamos um formulário simples para o campo de texto para evitar recargas acidentais
+                            with st.container():
+                                nova_obs = st.text_area("Andamento / Observações Técnicas:", value=obs_atual, key=f"txt_{index}", height=100)
+                                
+                                ca1, ca2 = st.columns(2)
+                                with ca1:
+                                    if st.button("💾 Atualizar Observação", key=f"sav_{index}", use_container_width=True):
+                                        # Lógica de salvamento robusta
+                                        try:
+                                            # Encontrar o índice da coluna K dinamicamente
+                                            col_idx = colunas.index("Obs_Acompanhamento") + 1
+                                            # index + 2 porque o pandas começa em 0 e a planilha tem cabeçalho
+                                            worksheet.update_cell(index + 2, col_idx, str(nova_obs))
+                                            st.success("Salvo com sucesso!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro técnico: {e}")
+                                
+                                with ca2:
+                                    if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
+                                        if st.button(f"✅ Marcar Regularizada", key=f"reg_{index}", use_container_width=True):
+                                            col_res_idx = colunas.index("Resolvido") + 1
+                                            worksheet.update_cell(index + 2, col_res_idx, "Sim")
+                                            st.success("Regularizada!")
+                                            st.rerun()
 
                         with col_img:
                             f_data = row.get('Foto_Path', row.get('Foto', ""))
                             if f_data and len(str(f_data)) > 100:
                                 st.image(base64.b64decode(f_data), use_container_width=True)
             else:
-                st.info("Nenhum item pendente no momento.")
+                st.info("Nenhum item encontrado.")
     except Exception as e:
-        st.error(f"Erro no histórico: {e}")
+        st.error(f"Erro geral: {e}")
