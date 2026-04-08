@@ -141,7 +141,6 @@ elif menu == "Histórico":
 
             with st.expander("🔍 Filtros Avançados", expanded=True):
                 c1, c2, c3 = st.columns(3)
-                # Mantém a data inicial desde o início do sistema (2024)
                 with c1: d_ini = st.date_input("Início", datetime(2024, 1, 1).date())
                 with c2: d_fim = st.date_input("Fim", hoje_br.date())
                 with c3: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
@@ -150,10 +149,8 @@ elif menu == "Histórico":
                 f_resol = st.radio("Exibir no Histórico:", opcoes_filtro, index=0, horizontal=True)
 
             mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Area'].isin(f_area))
-            
             df_display = df.loc[mask].copy()
             
-            # ORDENAÇÃO: Sempre do mais novo para o mais antigo (ascending=False)
             if f_resol == "Apenas Pendentes (Não Conforme)":
                 df_f = df_display[(df_display['Status'] == "Não Conforme") & (df_display['Resolvido'] == "Não")]
             elif f_resol == "Apenas Resolvidos":
@@ -161,7 +158,6 @@ elif menu == "Histórico":
             else:
                 df_f = df_display
 
-            # Aplica a ordenação decrescente (mais recente no topo)
             df_f = df_f.sort_values(by='Data_dt', ascending=False)
 
             if not df_f.empty:
@@ -173,8 +169,20 @@ elif menu == "Histórico":
                 
                 st.divider()
                 for index, row in df_f.iterrows():
-                    emoji = "✅" if row['Status'] == "Conforme" else "🔴" if row['Status'] == "Não Conforme" else "⚪"
-                    txt_res = " (RESOLVIDO)" if row.get('Resolvido') == "Sim" else " (PENDENTE)" if row['Status'] == "Não Conforme" else ""
+                    # --- LÓGICA DE ÍCONE ATUALIZADA ---
+                    status_val = row['Status']
+                    resolvido_val = row.get('Resolvido', 'Não')
+                    
+                    if resolvido_val == "Sim":
+                        emoji = "🟢" # Verde se estiver resolvido
+                    elif status_val == "Não Conforme":
+                        emoji = "🔴" # Vermelho se for pendente
+                    elif status_val == "Conforme":
+                        emoji = "✅"
+                    else:
+                        emoji = "⚪" # N/A ou outros
+                    
+                    txt_res = " (RESOLVIDO)" if resolvido_val == "Sim" else " (PENDENTE)" if status_val == "Não Conforme" else ""
                     
                     with st.expander(f"{emoji}{txt_res} {row['Data']} - {row['Area']} - {row['Item']}"):
                         col_info, col_img = st.columns([2, 1])
@@ -190,14 +198,13 @@ elif menu == "Histórico":
                                 if st.button("💾 Atualizar Observação", key=f"sav_{index}", use_container_width=True):
                                     try:
                                         col_obs_idx = colunas.index("Obs_Acompanhamento") + 1
-                                        # row.name é o índice original da planilha
                                         worksheet.update_cell(int(row.name) + 2, col_obs_idx, str(nova_obs))
                                         st.success("Salvo!")
                                         st.rerun()
                                     except Exception as e: st.error(f"Erro: {e}")
                             
                             with ca2:
-                                if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
+                                if status_val == "Não Conforme" and resolvido_val == "Não":
                                     if st.button(f"✅ Marcar Regularizada", key=f"reg_{index}", use_container_width=True):
                                         col_res_idx = colunas.index("Resolvido") + 1
                                         worksheet.update_cell(int(row.name) + 2, col_res_idx, "Sim")
