@@ -26,10 +26,10 @@ INFO_CRONOGRAMA = {
 }
 
 AREAS = {
-    "Sede Social": {"senha": "SSICS", "subs": ["Terraco", "1º Andar", "2º Andar"], "itens": ["Lampadas", "Piso", "Corrimãos", "Janelas", "Limpeza", "Pintura", "Estrutura"]},
-    "Operacional": {"senha": "OPICS", "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo", "Pátio", "Estacionamento", "Área de descanso"], "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]},
+    "Sede Social": {"senha": "SSICS", "subs": ["Terraco", "1º Andar", "2º Andar"], "itens": ["Lampadas", "Piso", "Corrimoes", "Janelas", "Limpeza", "Pintura"]},
+    "Operacional": {"senha": "OPICS", "subs": ["Cais I", "Cais do Meio", "Cais II", "Cais III", "Bacia IV", "Hangar Serv", "Hangar 1", "Hangar 2", "Hangar 3", "Hangar 4", "Hangar 5", "Hangar 6", "Hangar 7", "Boxes", "Canteiro de Obras", "Patio Novo"], "itens": ["Piso", "Caixas de energia", "Lampadas/Iluminacao", "Estrutura", "Limpeza", "Pintura"]},
     "Flats": {"senha": "FLATS", "subs": ["Bloco A - Terreo", "Bloco A - 1º Andar", "Bloco A - 2º Andar", "Bloco A - 3º Andar", "Bloco A - 4º Andar", "Bloco A - Terraco", "Bloco A - Garagem", "Bloco B - Terreo", "Bloco B - 1º Andar", "Bloco B - 2º Andar", "Bloco B - 3º Andar", "Bloco B - 4º Andar", "Bloco B - Terraco", "Bloco B - Garagem"], "itens": ["Lampadas/Iluminacao", "Piso/Escadarias", "Pintura", "Limpeza", "Interfones", "Extintores"]},
-    "Predios ADM": {"senha": "ADMICS", "subs": ["Secretaria Nautica", "Administracao Marina ICS", "1º andar (RH/TI)", "Predio Sala Radio", "Vestiários", "Deck de Madeira", "Portaria de Serviço"], "itens": ["Ar-condicionado", "Iluminacao", "Limpeza", "Mobiliario", "Pintura", "Portas/Vidros","Estrutura"]}
+    "Predios ADM": {"senha": "ADMICS", "subs": ["Secretaria Nautica", "Administracao Marina ICS", "1º andar (RH/TI)", "Predio Sala Radio"], "itens": ["Ar-condicionado", "Iluminacao", "Limpeza", "Mobiliario", "Pintura", "Portas/Vidros"]}
 }
 
 # --- 3. CONEXÃO E AUXILIARES ---
@@ -126,7 +126,6 @@ if menu == "Nova Inspeção":
                 else:
                     with st.spinner("Gravando..."):
                         ts = hoje_br.strftime("%d/%m/%Y %H:%M")
-                        # Colunas: Data, Usuario, Area, Subdivisao, Item, Status, Acao, Detalhes, Foto_Path, Resolvido, Obs_Acompanhamento
                         dados = [[ts, nome_usuario, area_sel, sub_area, r["item"], r["status"], r["acao"], r["obs"], preparar_foto(r["foto"]), "Não", ""] for r in respostas_form]
                         worksheet.append_rows(dados)
                         st.success("✅ Salvo com sucesso!")
@@ -134,21 +133,16 @@ if menu == "Nova Inspeção":
 elif menu == "Histórico":
     st.subheader("📂 Gestão de Não Conformidades")
     try:
-        # Forçamos a atualização dos dados para garantir que ele veja a coluna K
         dados_brutos = worksheet.get_all_values()
-        
         if len(dados_brutos) > 1:
             colunas = [c.strip() for c in dados_brutos[0]]
             df = pd.DataFrame(dados_brutos[1:], columns=colunas)
             df['Data_dt'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
 
-            # Verificação de segurança: se a coluna não vier no DataFrame, forçamos a existência dela
-            if "Obs_Acompanhamento" not in df.columns:
-                df["Obs_Acompanhamento"] = ""
-
             with st.expander("🔍 Filtros Avançados", expanded=True):
                 c1, c2, c3 = st.columns(3)
-                with c1: d_ini = st.date_input("Início", hoje_br.date().replace(day=1))
+                # Mantém a data inicial desde o início do sistema (2024)
+                with c1: d_ini = st.date_input("Início", datetime(2024, 1, 1).date())
                 with c2: d_fim = st.date_input("Fim", hoje_br.date())
                 with c3: f_area = st.multiselect("Áreas:", df['Area'].unique().tolist(), default=df['Area'].unique().tolist())
                 
@@ -157,12 +151,18 @@ elif menu == "Histórico":
 
             mask = (df['Data_dt'].dt.date >= d_ini) & (df['Data_dt'].dt.date <= d_fim) & (df['Area'].isin(f_area))
             
-            if f_resol == "Apenas Pendentes (Não Conforme)":
-                mask = mask & (df['Status'] == "Não Conforme") & (df['Resolvido'] == "Não")
-            elif f_resol == "Apenas Resolvidos":
-                mask = mask & (df['Resolvido'] == "Sim")
+            df_display = df.loc[mask].copy()
             
-            df_f = df.loc[mask]
+            # ORDENAÇÃO: Sempre do mais novo para o mais antigo (ascending=False)
+            if f_resol == "Apenas Pendentes (Não Conforme)":
+                df_f = df_display[(df_display['Status'] == "Não Conforme") & (df_display['Resolvido'] == "Não")]
+            elif f_resol == "Apenas Resolvidos":
+                df_f = df_display[df_display['Resolvido'] == "Sim"]
+            else:
+                df_f = df_display
+
+            # Aplica a ordenação decrescente (mais recente no topo)
+            df_f = df_f.sort_values(by='Data_dt', ascending=False)
 
             if not df_f.empty:
                 st.write(f"🔍 Registros encontrados: **{len(df_f)}**")
@@ -172,7 +172,7 @@ elif menu == "Histórico":
                 ce3.link_button("📧 E-mail", f"mailto:?body={urllib.parse.quote(formatar_corpo_email(df_f))}", use_container_width=True)
                 
                 st.divider()
-                for index, row in df_f.iloc[::-1].iterrows():
+                for index, row in df_f.iterrows():
                     emoji = "✅" if row['Status'] == "Conforme" else "🔴" if row['Status'] == "Não Conforme" else "⚪"
                     txt_res = " (RESOLVIDO)" if row.get('Resolvido') == "Sim" else " (PENDENTE)" if row['Status'] == "Não Conforme" else ""
                     
@@ -182,33 +182,27 @@ elif menu == "Histórico":
                             st.write(f"**Local:** {row['Subdivisao']} | **Ação:** {row['Acao']}")
                             st.write(f"**Obs Inicial:** {row['Detalhes']}")
                             
-                            # Campo de Observação
                             obs_atual = row.get('Obs_Acompanhamento', "")
-                            # Usamos um formulário simples para o campo de texto para evitar recargas acidentais
-                            with st.container():
-                                nova_obs = st.text_area("Andamento / Observações Técnicas:", value=obs_atual, key=f"txt_{index}", height=100)
-                                
-                                ca1, ca2 = st.columns(2)
-                                with ca1:
-                                    if st.button("💾 Atualizar Observação", key=f"sav_{index}", use_container_width=True):
-                                        # Lógica de salvamento robusta
-                                        try:
-                                            # Encontrar o índice da coluna K dinamicamente
-                                            col_idx = colunas.index("Obs_Acompanhamento") + 1
-                                            # index + 2 porque o pandas começa em 0 e a planilha tem cabeçalho
-                                            worksheet.update_cell(index + 2, col_idx, str(nova_obs))
-                                            st.success("Salvo com sucesso!")
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erro técnico: {e}")
-                                
-                                with ca2:
-                                    if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
-                                        if st.button(f"✅ Marcar Regularizada", key=f"reg_{index}", use_container_width=True):
-                                            col_res_idx = colunas.index("Resolvido") + 1
-                                            worksheet.update_cell(index + 2, col_res_idx, "Sim")
-                                            st.success("Regularizada!")
-                                            st.rerun()
+                            nova_obs = st.text_area("Andamento / Observações Técnicas:", value=obs_atual, key=f"txt_{index}", height=100)
+                            
+                            ca1, ca2 = st.columns(2)
+                            with ca1:
+                                if st.button("💾 Atualizar Observação", key=f"sav_{index}", use_container_width=True):
+                                    try:
+                                        col_obs_idx = colunas.index("Obs_Acompanhamento") + 1
+                                        # row.name é o índice original da planilha
+                                        worksheet.update_cell(int(row.name) + 2, col_obs_idx, str(nova_obs))
+                                        st.success("Salvo!")
+                                        st.rerun()
+                                    except Exception as e: st.error(f"Erro: {e}")
+                            
+                            with ca2:
+                                if row['Status'] == "Não Conforme" and row.get('Resolvido') == "Não":
+                                    if st.button(f"✅ Marcar Regularizada", key=f"reg_{index}", use_container_width=True):
+                                        col_res_idx = colunas.index("Resolvido") + 1
+                                        worksheet.update_cell(int(row.name) + 2, col_res_idx, "Sim")
+                                        st.success("Regularizada!")
+                                        st.rerun()
 
                         with col_img:
                             f_data = row.get('Foto_Path', row.get('Foto', ""))
@@ -217,4 +211,4 @@ elif menu == "Histórico":
             else:
                 st.info("Nenhum item encontrado.")
     except Exception as e:
-        st.error(f"Erro geral: {e}")
+        st.error(f"Erro no histórico: {e}")
