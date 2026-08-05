@@ -4,3 +4,4 @@ gspread
 google-auth
 Pillow
 fpdf
+starlette<0.40.0
